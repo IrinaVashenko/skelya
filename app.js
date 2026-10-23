@@ -1982,5 +1982,21 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // updateViaCache: 'none' — сам sw.js теж завжди перевіряється на сервері
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      reg.update();
+      // Коли апка повертається з фону — перевірити, чи вийшла нова версія
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); });
+    })
+    .catch(() => {});
+  // Нова версія встановилась — один раз перезавантажити сторінку, щоб її показати
+  // (при першому відкритті, коли офлайн-режиму ще не було, нічого не перезавантажуємо)
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded || sheetOpen()) return;
+    reloaded = true;
+    location.reload();
+  });
 }

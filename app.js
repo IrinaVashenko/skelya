@@ -657,15 +657,14 @@ function rearm(t) {
 
 function openForm({ task = null, gap = null, preset = null } = {}) {
   const editing = !!task;
-  const mins = [15, 30, 45, 60, 90, 120, 180];
+  const RANGE_MAX = 480;
   const pick = {
     type: task ? task.type : (preset && preset.type) || 'work',
     when: (task && task.startAt != null) || gap ? 'at' : 'auto',
     challenge: (task && task.challenge) || 'ux',
-    minutes: task ? task.minutes : gap ? (mins.filter((m) => m <= gap.len).pop() || 15) : (preset && preset.minutes) || 60,
+    // У вільне вікно: стільки, скільки вміщається, але не більше години (кратно 5 хв)
+    minutes: task ? task.minutes : gap ? Math.max(5, Math.min(60, Math.floor(gap.len / 5) * 5)) : (preset && preset.minutes) || 60,
   };
-  if (!mins.includes(pick.minutes)) mins.push(pick.minutes);
-  mins.sort((a, b) => a - b);
   const lockType = editing && task.status !== 'todo';
   const soon = Math.ceil(nowMin() / 15) * 15;
   const at = hhmm(task && task.fixedStart != null ? task.fixedStart : gap ? gap.start : soon);
@@ -685,7 +684,15 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
       ${choice('type', [['work', 'Робота'], ['learn', 'Навчання'], ['fixed', 'Фіксована'], ['break', 'Перерва']], pick.type)}</div>
     <div class="field" data-show="learn" hidden><span>Челендж</span>${challengeChoice(pick.challenge)}</div>
     <label class="field" data-show="time" hidden><span>О котрій</span><input class="input" type="time" name="at" value="${at}"></label>
-    <div class="field"><span>Скільки часу даєш</span>${choice('minutes', mins.map((m) => [m, dur(m)]), pick.minutes)}</div>
+    <div class="field"><span>Скільки часу даєш</span>
+      <div class="dur-box">
+        <div class="dur-inputs">
+          <label class="dur-num"><input class="input" type="number" inputmode="numeric" name="durH" min="0" max="12" value="${Math.floor(pick.minutes / 60)}" aria-label="Години"><span>год</span></label>
+          <label class="dur-num"><input class="input" type="number" inputmode="numeric" name="durM" min="0" max="59" value="${pick.minutes % 60}" aria-label="Хвилини"><span>хв</span></label>
+        </div>
+        <input class="range" type="range" name="durR" min="5" max="${RANGE_MAX}" step="5" value="${Math.min(pick.minutes, RANGE_MAX)}" aria-label="Тривалість">
+        <div class="range-scale"><span>5 хв</span><span>2 год</span><span>4 год</span><span>6 год</span><span>8 год</span></div>
+      </div></div>
     <p class="hint" id="splitHint" hidden>Більше 2 год? Розбий на кроки.</p>
     <div class="field" data-show="flex"><span>Коли почати</span>
       ${choice('when', [['auto', 'Після попередньої'], ['at', 'О певній годині']], pick.when)}</div>
@@ -708,11 +715,32 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
   };
   bindChoices(form, pick, sync);
   form.addEventListener('input', () => { $('#formErr').textContent = ''; });
+
+  // Повзунок і поля год/хв показують одне й те саме значення
+  const { durH, durM, durR } = form.elements;
+  const paintRange = () => { durR.style.setProperty('--p', `${((durR.value - durR.min) / (durR.max - durR.min)) * 100}%`); };
+  durR.addEventListener('input', () => {
+    pick.minutes = Number(durR.value);
+    durH.value = Math.floor(pick.minutes / 60);
+    durM.value = pick.minutes % 60;
+    paintRange(); sync();
+  });
+  const fromFields = () => {
+    pick.minutes = Math.max(0, Math.round(Number(durH.value) || 0)) * 60 + Math.max(0, Math.round(Number(durM.value) || 0));
+    durR.value = Math.min(Math.max(pick.minutes, 5), RANGE_MAX);
+    paintRange(); sync();
+  };
+  durH.addEventListener('input', fromFields);
+  durM.addEventListener('input', fromFields);
+  // Хвилини понад 59 перетворюємо на години, коли поле втрачає фокус
+  durM.addEventListener('change', () => { durH.value = Math.floor(pick.minutes / 60); durM.value = pick.minutes % 60; });
+  paintRange();
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const title = form.elements.title.value.trim(), result = form.elements.result.value.trim();
     if (!title) { $('#formErr').textContent = 'Напиши, що робиш.'; return; }
     if (flexible() && !result) { $('#formErr').textContent = 'Напиши, що буде результатом — так ти знатимеш, коли задача готова.'; return; }
+    if (pick.minutes < 5 || pick.minutes > 12 * 60) { $('#formErr').textContent = 'Вкажи тривалість від 5 хв до 12 год.'; return; }
 
     const t = task || { id: uid(), status: 'todo', extra: 0 };
     Object.assign(t, { title, type: pick.type, minutes: pick.minutes, lateAck: false });

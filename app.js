@@ -741,7 +741,7 @@ function openChallengeForm(id) {
   const dayOpts = [7, 14, 21, 30, 60, 90];
   openSheet(`<form id="chForm" class="form" novalidate>
     <h3>${ch ? 'Челендж' : 'Новий челендж'}</h3>
-    <div class="field"${ch ? ' hidden' : ''}><span>Напрям</span>${challengeChoice(pick.dir).replace('data-group="challenge"', 'data-group="dir"')}</div>
+    <div class="field"${ch ? ' hidden' : ''}><span>Напрям</span>${challengeChoice(pick.dir, 'dir')}</div>
     <label class="field"><span>Назва</span><input class="input" name="title" autocomplete="off" placeholder="${CHALLENGES[pick.dir].name} щодня" value="${esc(ch ? ch.title : '')}"></label>
     <div class="field"><span>Скільки днів</span>${choice('days', dayOpts.map((d) => [d, `${d}`]), dayOpts.includes(pick.days) ? pick.days : '')}
       <label class="dur-num" style="margin-top:8px"><input class="input" type="number" inputmode="numeric" name="daysN" min="1" max="365" value="${pick.days}" aria-label="Кількість днів"><span>днів</span></label></div>
@@ -987,6 +987,14 @@ function toast(msg) {
 // Кнопки-вибору всередині форм: [data-group] — один варіант, [data-multi] — кілька
 function bindChoices(form, pick, onChange) {
   form.addEventListener('click', (e) => {
+    // Акордіон: тап на заголовок розгортає або згортає список
+    const head = e.target.closest('.acc-head');
+    if (head) {
+      const open = head.getAttribute('aria-expanded') !== 'true';
+      head.setAttribute('aria-expanded', String(open));
+      head.nextElementSibling.hidden = !open;
+      return;
+    }
     const b = e.target.closest('[data-val]');
     if (!b) return;
     const box = b.parentElement;
@@ -996,9 +1004,16 @@ function bindChoices(form, pick, onChange) {
       if (set.has(v)) set.delete(v); else set.add(v);
       b.classList.toggle('on', set.has(v));
     } else {
-      box.querySelectorAll('.btn-quiet').forEach((x) => x.classList.toggle('on', x === b));
+      box.querySelectorAll('[data-val]').forEach((x) => x.classList.toggle('on', x === b));
       const g = box.dataset.group;
       pick[g] = /^\d+$/.test(b.dataset.val) ? Number(b.dataset.val) : b.dataset.val;
+      // Після вибору в акордіоні — показати обране в заголовку і згорнути
+      if (box.classList.contains('acc-list')) {
+        const h = box.previousElementSibling;
+        h.querySelector('.acc-val').innerHTML = b.querySelector('.acc-label').innerHTML;
+        h.setAttribute('aria-expanded', 'false');
+        box.hidden = true;
+      }
     }
     if (onChange) onChange();
   });
@@ -1006,8 +1021,17 @@ function bindChoices(form, pick, onChange) {
 
 const choice = (group, opts, cur) => `<div class="wrap" data-group="${group}">${opts.map(([v, n]) =>
   `<button type="button" class="btn-quiet${String(cur) === String(v) ? ' on' : ''}" data-val="${v}">${n}</button>`).join('')}</div>`;
-const challengeChoice = (cur) => `<div class="wrap" data-group="challenge">${Object.entries(CHALLENGES).map(([k, c]) =>
-  `<button type="button" class="btn-quiet${cur === k ? ' on' : ''}" data-val="${k}"><span class="dot" style="background:${c.color}"></span>${c.name}</button>`).join('')}</div>`;
+// Вибір напряму акордіоном: згорнуто видно тільки обраний, тап — розгорнути список
+const CHEVRON_SVG = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const OK_SVG = '<svg class="ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const challengeChoice = (cur, group = 'challenge') => {
+  const label = (k) => `<span class="acc-label"><span class="dot" style="background:${CHALLENGES[k].color}"></span>${CHALLENGES[k].name}</span>`;
+  return `<div class="acc">
+    <button type="button" class="acc-head" aria-expanded="false"><span class="acc-val">${label(cur)}</span>${CHEVRON_SVG}</button>
+    <div class="acc-list" data-group="${group}" hidden>${Object.keys(CHALLENGES).map((k) =>
+      `<button type="button" class="acc-opt${cur === k ? ' on' : ''}" data-val="${k}">${label(k)}${OK_SVG}</button>`).join('')}</div>
+  </div>`;
+};
 
 /* ---------- Меню кнопки «+» ---------- */
 

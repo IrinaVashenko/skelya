@@ -441,3 +441,16 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
   transition: opacity .2s, transform .2s;
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Акордіон вибору ---------- */
+.acc { border-radius: 14px; background: rgba(255, 255, 255, .06); border: .5px solid rgba(255, 255, 255, .14); overflow: hidden; }
+.acc-head, .acc-opt { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 16px; text-align: left; color: var(--text); }
+.acc-label { display: flex; align-items: center; gap: 10px; }
+.acc .dot { width: 10px; height: 10px; margin: 0; flex: none; }
+.acc-head .chev { margin-left: auto; width: 18px; height: 18px; color: var(--muted); transition: transform .2s; }
+.acc-head[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.acc-list { border-top: .5px solid var(--line); }
+.acc-opt + .acc-opt { border-top: .5px solid var(--line); }
+.acc-opt .ok { margin-left: auto; width: 18px; height: 18px; stroke-width: 2.4; opacity: 0; }
+.acc-opt.on .ok { opacity: 1; }
+.acc-opt:active { background: rgba(255, 255, 255, .05); }

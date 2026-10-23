@@ -1,5 +1,5 @@
 // Офлайн-режим: зберігаємо файли апки, щоб вона відкривалась без інтернету
-const CACHE = 'skelya-v23';
+const CACHE = 'skelya-v24';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

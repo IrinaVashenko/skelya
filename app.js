@@ -977,7 +977,8 @@ function unlockAudio() {
   } catch (e) { /* звук недоступний */ }
 }
 function beep(times = 1) {
-  if (navigator.vibrate) navigator.vibrate(times > 1 ? [200, 120, 200] : 200);
+  // Вібрацію браузер дозволяє лише після першого дотику до сторінки
+  if (navigator.vibrate && audio) navigator.vibrate(times > 1 ? [200, 120, 200] : 200);
   if (!audio) return;
   for (let i = 0; i < times; i++) {
     const o = audio.createOscillator(), g = audio.createGain();

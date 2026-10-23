@@ -32,7 +32,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .app {
   max-width: 480px;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 16px) 20px calc(env(safe-area-inset-bottom) + 100px);
+  padding: calc(env(safe-area-inset-top) + 16px) 20px calc(env(safe-area-inset-bottom) + 112px);
 }
 
 .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
@@ -54,8 +54,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .actions { width: 100%; margin-top: 26px; display: flex; flex-direction: column; gap: 10px; }
 .row-main { display: flex; gap: 10px; align-items: stretch; }
 .row-main .btn-pearl { flex: 1; }
-.row-main .btn-quiet.icon { flex: 0 0 50px; height: auto; }
-.row-main .btn-quiet.icon svg { width: 18px; height: 18px; }
+.row-main .btn-quiet.icon { flex: 0 0 56px; height: auto; border-width: 1px; background: rgba(255, 255, 255, .07); color: var(--text); }
+.row-main .btn-quiet.icon svg { width: 20px; height: 20px; stroke-width: 2.2; }
+.pause-note { text-align: center; font-size: 14px; line-height: 1.5; color: var(--muted); margin: 0 0 4px; }
+.pause-note b { color: var(--text); font-weight: 500; }
 
 /* ---------- Порожній стан: неонова Скеля ---------- */
 .calm { width: min(300px, 82vw); aspect-ratio: 260 / 210; }
@@ -88,7 +90,7 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
 .btn-pearl {
   display: block; width: 100%;
   text-align: center; border-radius: 999px;
-  font-weight: 500; font-size: 16px; padding: 13px;
+  font-weight: 500; font-size: 17px; line-height: 22px; padding: 16px;
   color: #0B0B0F;
   background: radial-gradient(120% 140% at 30% 0%, #FFFFFF 0%, #F1EFF6 50%, #D6D3E0 100%);
   border: 1px solid rgba(255, 255, 255, .85);
@@ -110,8 +112,15 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
 .btn-quiet.icon { flex: 0 0 40px; height: 34px; display: flex; align-items: center; justify-content: center; padding: 0; }
 .btn-quiet.icon svg { width: 16px; height: 16px; }
 .btn-quiet.on { background: rgba(232, 232, 236, .88); color: #0B0B0F; border-color: transparent; }
-/* Secondary поруч із перлиною: той самий розмір, інший стиль */
-.btn-quiet.lg { display: block; width: 100%; flex: none; font-size: 16px; font-weight: 500; padding: 13px; border-width: 1px; color: var(--text); }
+/* Secondary: той самий розмір, що й перлина (primary), відрізняється лише яскравістю.
+   Маленькі .btn-quiet лишаються тільки для чипів вибору і +15/+20/+30 */
+.btn-quiet.lg {
+  display: block; width: 100%; flex: none;
+  font-size: 17px; line-height: 22px; font-weight: 500; padding: 16px;
+  border-width: 1px; border-color: rgba(255, 255, 255, .16); border-top-color: rgba(255, 255, 255, .28);
+  background: rgba(255, 255, 255, .07); color: var(--text); text-align: center; text-decoration: none;
+}
+.chips .btn-quiet.lg { flex: 1; width: auto; }
 .link { color: var(--muted); font-size: 13px; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 
 /* ---------- Компактна панель ---------- */
@@ -212,21 +221,27 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
   max-width: 448px; margin: 0 auto;
   display: flex; gap: 10px; align-items: center;
 }
+/* Однаковий відступ 6px навколо активної вкладки: зверху, знизу і по боках */
 .tabbar {
   flex: 1;
-  display: flex; justify-content: space-around; align-items: center;
+  display: flex; align-items: stretch; gap: 2px;
   padding: 6px; border-radius: 999px;
 }
 .fab {
-  flex: none; width: 50px; height: 50px; border-radius: 50%;
+  flex: none; width: 66px; height: 66px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; color: var(--text);
   transition: transform .12s;
 }
 .fab:active { transform: scale(.94); }
-.fab svg { width: 22px; height: 22px; }
-.tab { width: 52px; height: 36px; border-radius: 999px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
-.tab svg { width: 20px; height: 20px; }
-.tab.on { background: rgba(255, 255, 255, .12); color: var(--text); }
+.fab svg { width: 26px; height: 26px; stroke-width: 2; }
+.tab {
+  flex: 1; min-width: 0; height: 54px; border-radius: 999px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: rgba(232, 232, 236, .72); font-size: 11px; font-weight: 500;
+}
+.tab svg { width: 24px; height: 24px; stroke-width: 2; }
+.tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tab.on { background: rgba(255, 255, 255, .14); color: var(--text); }
 
 /* ---------- Нижній лист (спливаючі вікна) ---------- */
 .overlay { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; justify-content: center; }
@@ -286,7 +301,7 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
 .conf p { color: var(--text); }
 
 .toast {
-  position: fixed; z-index: 40; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 76px);
+  position: fixed; z-index: 40; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 92px);
   transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
   background: rgba(232, 232, 236, .92); color: #0B0B0F;
   font-size: 13px; padding: 8px 14px; border-radius: 999px;

@@ -257,9 +257,12 @@ function renderHero() {
   els.calm.hidden = !empty;
   els.ringBox.hidden = empty;
   if (act && act.pausedAt) {
-    els.heroActions.innerHTML = `<button class="btn-pearl" data-action="resume">Продовжити</button>
-      <div class="chips"><button class="btn-quiet" data-action="pause-reason">${esc(act.pauseReason || 'Що трапилось?')}</button>
-      <button class="btn-quiet" data-action="done">Готово</button></div>`;
+    // Явно пишемо, яка задача на паузі і що означає кожна кнопка
+    els.heroActions.innerHTML = `<p class="pause-note"><b>«${esc(act.title)}»</b> на паузі${act.pauseReason ? ` · ${esc(act.pauseReason)}` : ''}.<br>
+        Час паузи в задачу не рахується — він піде у звіт як перерва.</p>
+      <button class="btn-pearl" data-action="resume">Продовжити задачу</button>
+      <button class="btn-quiet lg" data-action="done">Задачу завершено</button>
+      <button class="link-quiet" data-action="pause-reason">${act.pauseReason ? 'Змінити причину' : 'Вказати причину'}</button>`;
   } else if (act) {
     els.heroActions.innerHTML = `<div class="row-main"><button class="btn-quiet icon" data-action="pause" aria-label="Пауза">${PAUSE_SVG}</button>
       <button class="btn-pearl" data-action="done">Готово</button></div>${extendChips()}`;
@@ -477,7 +480,7 @@ function openWarn(kind, over = 0) {
     openSheet(`<div class="title-row">${WARN_ICON(RED)}<h3>Ти ще на задачі?</h3></div>
       <p>Понад план уже ${dur(over / 60000)}.</p>
       <button class="btn-pearl" data-action="done">Готово</button>${chips}
-      <button class="btn-quiet" data-action="close">Так, працюю</button>`);
+      <button class="btn-quiet lg" data-action="close">Так, працюю</button>`);
   }
 }
 
@@ -493,11 +496,11 @@ function checkLate() {
     <p>«${esc(t.title)}» закінчиться о ${hhmm(late.end)}. Твоя межа дня ${hhmm(dayEnd)}.</p>
     ${learn ? `<p>Навчання краще не пропускати зовсім — хоча б 30 хв сьогодні.</p>
       <button class="btn-pearl" data-action="late-cut" data-id="${t.id}" data-min="30">Хоча б 30 хв сьогодні</button>
-      <div class="chips"><button class="btn-quiet" data-action="late-move" data-id="${t.id}">На завтра</button>
-      <button class="btn-quiet" data-action="late-keep" data-id="${t.id}">Повністю</button></div>`
+      <div class="chips"><button class="btn-quiet lg" data-action="late-move" data-id="${t.id}">На завтра</button>
+      <button class="btn-quiet lg" data-action="late-keep" data-id="${t.id}">Повністю</button></div>`
     : `<button class="btn-pearl" data-action="late-move" data-id="${t.id}">Перенести на завтра</button>
-      <div class="chips"><button class="btn-quiet" data-action="late-keep" data-id="${t.id}">Допрацюю</button>
-      <button class="btn-quiet" data-action="late-cut" data-id="${t.id}" data-min="${fit}">Скоротити</button></div>`}`);
+      <div class="chips"><button class="btn-quiet lg" data-action="late-keep" data-id="${t.id}">Допрацюю</button>
+      <button class="btn-quiet lg" data-action="late-cut" data-id="${t.id}" data-min="${fit}">Скоротити</button></div>`}`);
 }
 
 // Довга пауза: одне м'яке нагадування через 30 хв
@@ -508,18 +511,18 @@ function checkPauseNag(act) {
   beep();
   openSheet(`<div class="title-row">${WARN_ICON(YELLOW)}<h3>Ти на паузі вже 30 хв</h3></div>
     <p>«${esc(act.title)}» чекає. Повертаємось?</p>
-    <button class="btn-pearl" data-action="resume">Продовжити</button>
-    <div class="chips"><button class="btn-quiet" data-action="close">Ще на паузі</button>
-    <button class="btn-quiet" data-action="done">Готово</button></div>`);
+    <button class="btn-pearl" data-action="resume">Продовжити задачу</button>
+    <div class="chips"><button class="btn-quiet lg" data-action="close">Ще на паузі</button>
+    <button class="btn-quiet lg" data-action="done">Задачу завершено</button></div>`);
 }
 
 function openPauseReason() {
   const t = active();
   if (!t) return;
   openSheet(`<h3>Що трапилось?</h3>
-    <p>Таймер задачі на паузі. Причина піде у звіт для Скелі — так видно, що тебе перериває.</p>
+    <p>«${esc(t.title)}» на паузі — цей час у задачу не рахується. Коли повернешся, натисни «Продовжити задачу». Причина піде у звіт для Скелі, щоб було видно, що тебе перериває.</p>
     <div class="wrap">${PAUSE_REASONS.map((r) => `<button class="btn-quiet${t.pauseReason === r ? ' on' : ''}" data-action="set-reason" data-reason="${r}">${r}</button>`).join('')}</div>
-    <button class="btn-quiet" data-action="close">Пропустити</button>`);
+    <button class="btn-quiet lg" data-action="close">Пропустити</button>`);
 }
 
 // Кінець робочого дня: питаємо про вечірню роботу, якщо лишились робочі задачі
@@ -534,7 +537,7 @@ function checkWorkEnd() {
   openSheet(`<div class="title-row">${WARN_ICON(YELLOW)}<h3>Робочий час закінчився</h3></div>
     <p>Лишилось робочих задач: ${left.length} (${dur(total)}).</p>
     <button class="btn-pearl" data-action="close">Попрацюю ввечері</button>
-    <button class="btn-quiet" data-action="work-move">Перенести на завтра</button>`);
+    <button class="btn-quiet lg" data-action="work-move">Перенести на завтра</button>`);
 }
 
 /* ================= Нижній лист ================= */
@@ -637,8 +640,8 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
     <p class="err" id="formErr"></p>
     <button class="btn-pearl" type="submit">${editing ? 'Зберегти' : 'Додати в план'}</button>
     ${editing ? `<div class="chips">
-      ${canStart ? `<button type="button" class="btn-quiet" data-action="start" data-id="${task.id}">Почати зараз</button>` : ''}
-      ${task.status !== 'active' ? `<button type="button" class="btn-quiet" data-action="delete" data-id="${task.id}">Видалити</button>` : ''}</div>` : ''}
+      ${canStart ? `<button type="button" class="btn-quiet lg" data-action="start" data-id="${task.id}">Почати зараз</button>` : ''}
+      ${task.status !== 'active' ? `<button type="button" class="btn-quiet lg" data-action="delete" data-id="${task.id}">Видалити</button>` : ''}</div>` : ''}
   </form>`);
 
   const form = $('#taskForm');
@@ -703,7 +706,7 @@ function openSettings() {
       ${WEEKDAYS.map(([d, n]) => `<button type="button" class="btn-quiet${pick.days.has(d) ? ' on' : ''}" data-val="${d}">${n}</button>`).join('')}</div></div>
     <p class="err" id="setErr"></p>
     <button class="btn-pearl" type="submit">Зберегти</button>
-    <button type="button" class="btn-quiet" data-action="routine">Мій розклад тижня</button></form>`);
+    <button type="button" class="btn-quiet lg" data-action="routine">Мій розклад тижня</button></form>`);
   const f = $('#setForm');
   bindChoices(f, pick);
   f.addEventListener('submit', (e) => {
@@ -763,8 +766,8 @@ function openRoutineForm(id) {
       ${Object.entries(CHALLENGES).map(([k, c]) => `<button type="button" class="btn-quiet${pick.challenge === k ? ' on' : ''}" data-val="${k}"><span class="dot" style="background:${c.color}"></span>${c.name}</button>`).join('')}</div></div>
     <p class="err" id="rErr"></p>
     <button class="btn-pearl" type="submit">Зберегти</button>
-    <div class="chips">${r ? `<button type="button" class="btn-quiet" data-action="routine-delete" data-id="${r.id}">Видалити</button>` : ''}
-      <button type="button" class="btn-quiet" data-action="routine">Назад</button></div>
+    <div class="chips">${r ? `<button type="button" class="btn-quiet lg" data-action="routine-delete" data-id="${r.id}">Видалити</button>` : ''}
+      <button type="button" class="btn-quiet lg" data-action="routine">Назад</button></div>
   </form>`);
   const f = $('#rForm');
   bindChoices(f, pick);
@@ -954,7 +957,7 @@ function openImport() {
     <textarea class="input area" name="text" placeholder="📅 ${addDays(todayKey(), 1)}&#10;- 60 | Макет головної | Перший екран готовий&#10;- UX 60 | Кейс-стаді | 3 інсайти"></textarea>
     <p class="err" id="impErr"></p>
     <button class="btn-pearl" type="submit">Розібрати план</button>
-    ${navigator.clipboard && navigator.clipboard.readText ? '<button type="button" class="btn-quiet" id="pasteBtn">Вставити з буфера</button>' : ''}
+    ${navigator.clipboard && navigator.clipboard.readText ? '<button type="button" class="btn-quiet lg" id="pasteBtn">Вставити з буфера</button>' : ''}
   </form>`);
   const f = $('#impForm');
   const pb = $('#pasteBtn');
@@ -998,7 +1001,7 @@ function openImportReview(days, skipped, routine = []) {
     ${skipped.length ? `<p class="muted">Не вдалося прочитати: ${skipped.map(esc).join('; ')}</p>` : ''}
     <p class="err" id="revErr"></p>
     <button class="btn-pearl" type="submit">Додати в план</button>
-    <button type="button" class="btn-quiet" data-action="import">Назад</button></form>`);
+    <button type="button" class="btn-quiet lg" data-action="import">Назад</button></form>`);
   const f = $('#revForm');
   const pick = {};
   bindChoices(f, pick, () => { $('#revErr').textContent = ''; });
@@ -1074,7 +1077,7 @@ function openReport() {
     <p>Скопіюй і встав у Claude — Скеля розбере день і допоможе спланувати завтра.</p>
     <textarea class="input area" id="repText" readonly>${esc(buildReport())}</textarea>
     <button class="btn-pearl" data-action="copy-report">Скопіювати</button>
-    <a class="btn-quiet" href="https://claude.ai/" target="_blank" rel="noopener">Відкрити Claude</a>`);
+    <a class="btn-quiet lg" href="https://claude.ai/" target="_blank" rel="noopener">Відкрити Claude</a>`);
 }
 
 async function copyReport() {
@@ -1138,7 +1141,7 @@ function done() {
     openSheet(`<h3>Перевірка</h3><p>Перш ніж віддати — чи готово?</p>
       <div class="field"><span>Результат</span><div>${esc(t.result)}</div></div>
       <button class="btn-pearl" data-action="close">Так, готово</button>
-      <button class="btn-quiet" data-action="reopen" data-id="${t.id}">Ні, ще +15 хв</button>`);
+      <button class="btn-quiet lg" data-action="reopen" data-id="${t.id}">Ні, ще +15 хв</button>`);
   }
 }
 

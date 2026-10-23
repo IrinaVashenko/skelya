@@ -631,7 +631,6 @@ function renderTasks() {
 
 /* ================= Челенджі ================= */
 
-const MONTHS_SHORT = ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру'];
 const daysBetween = (a, b) => Math.round((dateOf(b) - dateOf(a)) / 86400000);
 const chEnd = (ch) => addDays(ch.start, ch.days - 1);
 // Чи цей день — день челенджу (а не вихідний), якщо обрано не всі дні тижня
@@ -681,25 +680,18 @@ function chStats(ch) {
   };
 }
 
-// Сітка як у GitHub: стовпчик — тиждень, рядок — день тижня (Пн зверху)
+// Квадратики по ширині: один квадратик — одне заняття (вихідні дні челенджу не показуємо)
 function chGrid(ch) {
   const today = todayKey(), color = CHALLENGES[ch.dir].color;
-  const off = (weekdayOf(ch.start) + 6) % 7;
-  const cols = Math.ceil((off + ch.days) / 7);
-  const sq = Math.max(12, Math.min(30, Math.floor(330 / cols) - 4));
-  const months = new Array(cols).fill('');
-  let cells = '<i class="sq pad"></i>'.repeat(off);
-  for (let i = 0; i < ch.days; i++) {
-    const k = addDays(ch.start, i), d = dateOf(k), col = Math.floor((off + i) / 7);
-    if (i === 0 || d.getDate() === 1) months[col] = months[col] || MONTHS_SHORT[d.getMonth()];
-    const rest = !isChDay(ch, k);
-    const lvl = k > today ? 'f' : chLevel(ch, k);
-    // Вихідний день челенджу: маленька крапка замість квадратика (якщо вчилась і в цей день — показуємо колір)
-    cells += `<i class="sq l${lvl}${rest && (lvl === 'f' || lvl === 0) ? ' off' : ''}${k === today ? ' is-today' : ''}"></i>`;
-  }
-  return `<div class="sq-scroll" style="--sq:${sq}px;--c:${color}">
-    <div class="sq-months" style="grid-template-columns:repeat(${cols},var(--sq))">${months.map((m) => `<span>${m}</span>`).join('')}</div>
-    <div class="sq-grid">${cells}</div></div>`;
+  const days = [];
+  for (let i = 0; i < ch.days; i++) { const k = addDays(ch.start, i); if (isChDay(ch, k)) days.push(k); }
+  const n = days.length;
+  // Скільки в ряд: короткі челенджі — великі квадратики, довгі — дрібніші
+  const cols = n <= 10 ? n : n <= 21 ? 7 : n <= 40 ? 10 : n <= 120 ? 15 : 20;
+  const cells = days.map((k) => `<i class="sq l${k > today ? 'f' : chLevel(ch, k)}${k === today ? ' is-today' : ''}"></i>`).join('');
+  const fmt = (k) => dateOf(k).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+  return `<div class="sq-grid${cols >= 15 ? ' dense' : ''}" style="--c:${color};grid-template-columns:repeat(${cols},minmax(0,1fr))">${cells}</div>
+    <div class="sq-range"><span>${fmt(ch.start)}</span><span>${fmt(chEnd(ch))}</span></div>`;
 }
 
 function challengeHtml(ch) {
@@ -737,11 +729,6 @@ function renderChallenges() {
         <span class="cd">${chStats(ch).done} з ${chStats(ch).total} · повернути</span></button>`).join('')}</section>`;
   }
   els.viewChallenges.innerHTML = h;
-  // Довгі челенджі прокручуємо до сьогоднішнього тижня
-  els.viewChallenges.querySelectorAll('.sq-scroll').forEach((sc) => {
-    const now = sc.querySelector('.sq.is-today');
-    if (now && sc.scrollWidth > sc.clientWidth) sc.scrollLeft = now.offsetLeft - sc.clientWidth / 2;
-  });
 }
 
 function openChallengeForm(id) {

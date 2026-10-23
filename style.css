@@ -319,13 +319,11 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .md.on { background: var(--text); color: #121214; }
 .md.past:not(.on) { opacity: .5; }
 .dots { display: flex; gap: 3px; height: 5px; }
-.dots i, .legend i { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.dots i { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
 .dw { background: var(--text); }
 .dl { background: #2F7DFF; }
 .dr { background: var(--red); }
 .md.on .dw { background: #121214; }
-.legend { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
-.legend i { margin-right: 5px; vertical-align: 1px; }
 
 .cal-section { margin-top: 26px; display: flex; flex-direction: column; }
 .cal-section > .btn-quiet.lg { margin-top: 14px; }

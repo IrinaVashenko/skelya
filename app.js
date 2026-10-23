@@ -610,7 +610,7 @@ function renderTasks() {
     h += `<div class="cal-nav"><button class="btn-quiet icon" data-action="cal-month" data-n="-1" aria-label="Попередній місяць">${PREV_SVG}</button>
       <span>${MONTHS[m - 1]} ${y}</span><button class="btn-quiet icon" data-action="cal-month" data-n="1" aria-label="Наступний місяць">${NEXT_SVG}</button></div>
       <div class="month">${WEEKDAYS.map(([, n]) => `<span class="mh">${n}</span>`).join('')}${cells}</div>
-      <div class="legend"><span><i class="dw"></i>робота</span><span><i class="dl"></i>навчання</span><span><i class="dr"></i>не вміщається</span></div>`;
+`;
   }
 
   h += dayListHtml(sel);
@@ -620,8 +620,8 @@ function renderTasks() {
     ${bl.length ? bl.map((t) => `<button class="cal-row" data-action="open" data-id="${t.id}">
       <span class="ct"></span><span class="cn">${taskColor(t) ? `<span class="dot" style="background:${taskColor(t)}"></span>` : ''}${esc(t.title)}</span>
       <span class="cd">${dur(t.minutes)}</span></button>`).join('')
-    : '<p class="empty">Тут живуть задачі «колись». Признач їм день, коли буде час.</p>'}
-    <button class="btn-quiet lg" data-action="add-backlog">Додати без дати</button></section>`;
+    : '<p class="empty">Тут живуть задачі «колись». Додай через «+» і обери «Без дати».</p>'}
+</section>`;
 
   els.viewTasks.innerHTML = h;
 }
@@ -658,7 +658,7 @@ function dayListHtml(key) {
   const label = key === today ? 'Сьогодні' : key === addDays(today, 1) ? 'Завтра'
     : dateOf(key).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' }).replace(/^./, (c) => c.toUpperCase());
   return `<section class="cal-section"><div class="cal-day-head"><h2>${label}</h2><span>${summary}</span></div>
-    ${rows}${key >= today ? `<button class="btn-quiet lg" data-action="add-day" data-key="${key}">Задача на цей день</button>` : ''}</section>`;
+    ${rows}</section>`;
 }
 
 /* Компактна панель: видно, коли великий таймер прокручено */
@@ -1475,8 +1475,6 @@ const actions = {
   menu: openMenu,
   // На екрані «Задачі» нова задача одразу йде в обраний день
   add: () => openForm({ dayKey: view === 'tasks' && cal.sel >= todayKey() ? cal.sel : undefined }),
-  'add-day': (el) => openForm({ dayKey: el.dataset.key }),
-  'add-backlog': () => openForm({ dayKey: 'backlog' }),
   tab: (el) => { view = el.dataset.tab; closeSheet(); window.scrollTo(0, 0); renderAll(); },
   'cal-mode': (el) => { cal.mode = el.dataset.mode; renderTasks(); },
   'cal-pick': (el) => { cal.sel = el.dataset.key; renderTasks(); },

@@ -504,3 +504,17 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .hrow .hb i { display: block; height: 100%; border-radius: 4px; }
 .hrow .hv { flex: none; min-width: 64px; white-space: nowrap; text-align: right; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cal-row .warn, .cal-day-head .warn { color: var(--red); font-weight: 400; }
+
+/* ---------- Розмиття під навбаром ---------- */
+.dock-fade {
+  position: fixed; z-index: 9; left: 0; right: 0; bottom: 0;
+  height: calc(env(safe-area-inset-bottom) + 120px);
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(18, 18, 20, 0) 0%, rgba(18, 18, 20, .7) 45%, rgba(18, 18, 20, .96) 100%);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  /* Розмиття наростає поступово, без різкої межі зверху */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 50%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 50%);
+}
+body.is-empty .dock-fade { display: none; }

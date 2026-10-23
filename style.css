@@ -386,7 +386,7 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .dur-box { display: flex; flex-direction: column; gap: 12px; }
 .dur-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dur-num { position: relative; display: block; }
-.dur-num .input { padding-right: 48px; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.dur-num .input { padding-right: 48px; font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
 .dur-num .input::-webkit-inner-spin-button, .dur-num .input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .dur-num span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
 .range { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: transparent; margin: 0; --p: 12%; }

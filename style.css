@@ -67,13 +67,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .row-main .btn-pearl { flex: 1; }
 .row-main .btn-quiet.icon { flex: 0 0 56px; height: auto; border-width: 1px; background: rgba(255, 255, 255, .07); color: var(--text); }
 .row-main .btn-quiet.icon svg { width: 20px; height: 20px; stroke-width: 2.2; }
-.pause-note { text-align: center; font-size: 14px; line-height: 1.5; color: var(--muted); margin: 0 0 4px; }
+.pause-note { text-align: center; font-size: 14px; line-height: 1.5; color: var(--muted); margin: 0 0 12px; }
 .pause-note b { color: var(--text); font-weight: 500; }
 
 /* ---------- Порожній стан: неонова Скеля ---------- */
 .calm { width: min(300px, 82vw); aspect-ratio: 260 / 210; }
 .calm svg { width: 100%; height: 100%; overflow: visible; }
-.calm-text { text-align: center; margin-top: 4px; }
+.calm-text { text-align: center; margin: 4px 0 14px; }
 .calm-text h2 { margin: 0; font-size: 22px; font-weight: 500; }
 .calm-text p { margin: 8px auto 0; max-width: 290px; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .calm .blob { opacity: .32; transform-box: fill-box; transform-origin: center; animation: drift 14s ease-in-out infinite alternate; }
@@ -387,7 +387,7 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .sq.is-today { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--text); }
 .sq-range { display: flex; justify-content: space-between; margin-top: -4px; font-size: 12px; color: var(--faint); }
 .ch-end { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
-.ch-end p { margin: 0; font-size: 14px; color: var(--muted); }
+.ch-end p { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
 .ch-empty { margin-top: 30px; color: var(--muted); font-size: 15px; line-height: 1.55; }
 .ch-empty p { margin: 0 0 10px; }
 
@@ -468,3 +468,39 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .btn-quiet.lg.danger { color: var(--red); border-color: rgba(255, 69, 58, .45); }
 .app { scrollbar-width: none; }
 .app::-webkit-scrollbar { display: none; }
+
+/* Відступ між текстом і кнопками у спливаючих вікнах */
+.sheet > p + .btn-pearl, .sheet > p + .btn-quiet.lg, .sheet > .field + .btn-pearl, .sheet > .wrap + .btn-quiet.lg { margin-top: 10px; }
+
+/* Демо-день */
+.demo-bar { margin-top: 14px; padding: 14px; border-radius: 16px; border: .5px dashed rgba(232, 232, 236, .25); display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 1.45; color: var(--muted); text-align: center; }
+
+/* ---------- Прогрес ---------- */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.tile { padding: 14px; border-radius: 16px; background: rgba(255, 255, 255, .05); border: .5px solid rgba(255, 255, 255, .1); display: flex; flex-direction: column; gap: 4px; }
+.tile span { font-size: 13px; color: var(--muted); }
+.tile b { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tile small { font-size: 12px; color: var(--faint); line-height: 1.35; }
+.legend2 { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin: 2px 0 12px; }
+.legend2 i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+.bars { display: flex; align-items: flex-end; gap: 8px; border-bottom: .5px solid var(--line); }
+.bars.thin { gap: 3px; }
+.bar { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding-top: 6px; }
+.bar .stack { height: var(--h); display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
+.bar .stack i { display: block; width: 100%; border-radius: 4px 4px 0 0; }
+.bar .stack i.seg-w { border-radius: 0; }
+.bar .stack i:first-child { border-radius: 4px 4px 0 0; }
+.bar .bl { height: 16px; font-size: 11px; color: var(--faint); text-align: center; font-variant-numeric: tabular-nums; }
+.bar.on .bl { color: var(--text); font-weight: 500; }
+.bar.on .stack { box-shadow: 0 -2px 0 0 transparent; }
+.bar.future .bl { opacity: .5; }
+.bars.thin .bar .stack i { border-radius: 2px 2px 0 0; }
+.tip { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.tip b { color: var(--text); font-weight: 500; }
+.hrow { display: flex; align-items: center; gap: 10px; padding: 9px 0; font-size: 15px; }
+.hrow .hn { width: 112px; flex: none; display: flex; align-items: center; gap: 8px; }
+.hrow .hn .dot { margin: 0; }
+.hrow .hb { flex: 1; height: 8px; border-radius: 4px; background: #26262A; overflow: hidden; }
+.hrow .hb i { display: block; height: 100%; border-radius: 4px; }
+.hrow .hv { flex: none; min-width: 64px; white-space: nowrap; text-align: right; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cal-row .warn, .cal-day-head .warn { color: var(--red); font-weight: 400; }

@@ -108,6 +108,7 @@ function rollover(s) {
     done: t.status === 'done',
     fact: t.status === 'done' && t.startedAt ? Math.round(elapsedMs(t) / 60000) : 0,
     at: t.startedAt ? Math.round(minOfDay(t.startedAt)) : (t.fixedStart ?? t.startAt ?? null),
+    breaks: (t.pauses || []).filter((p) => p.reason !== 'Перевірка').map((p) => ({ reason: p.reason || null, min: Math.round((p.end - p.start) / 60000) })),
   });
   if (s.tasks.length) history[s.date] = s.tasks.map(snap);
   for (const [k, v] of Object.entries(s.future)) if (k < key && v.length) history[k] = v.map(snap);
@@ -340,7 +341,8 @@ const els = {
   date: $('#date'), count: $('#count'), arc: $('#arc'), ringTime: $('#ringTime'), ringSub: $('#ringSub'),
   heroActions: $('#heroActions'), grid: $('#grid'), free: $('#free'), hours: $('#hours'), nudge: $('#nudge'),
   calm: $('#calm'), ringBox: $('#ringBox'), planSection: $('#planSection'),
-  viewToday: $('#viewToday'), viewTasks: $('#viewTasks'), viewChallenges: $('#viewChallenges'),
+  demoBar: $('#demoBar'),
+  viewToday: $('#viewToday'), viewTasks: $('#viewTasks'), viewChallenges: $('#viewChallenges'), viewProgress: $('#viewProgress'),
   mini: $('#mini'), miniArc: $('#miniArc'), miniTime: $('#miniTime'), miniTotal: $('#miniTotal'),
   overlay: $('#overlay'), sheet: $('#sheet'), toast: $('#toast'),
 };
@@ -541,11 +543,13 @@ function renderAll() {
   // Поки немає жодних задач (ні сьогодні, ні в майбутньому, ні без дати) — тільки Скеля і дві дії
   const noData = !state.tasks.length && !state.backlog.length && !state.challenges.length && !Object.values(state.future).some((l) => l.length);
   els.planSection.hidden = !state.tasks.length;
+  els.demoBar.hidden = !state.tasks.some((t) => t.demo);
   document.body.classList.toggle('is-empty', noData);
   if (noData) view = 'today';
   els.viewToday.hidden = view !== 'today';
   els.viewTasks.hidden = view !== 'tasks';
   els.viewChallenges.hidden = view !== 'challenges';
+  els.viewProgress.hidden = view !== 'progress';
   document.querySelectorAll('.tab[data-tab]').forEach((b) => {
     const on = b.dataset.tab === view;
     b.classList.toggle('on', on);
@@ -555,6 +559,7 @@ function renderAll() {
   renderGrid();
   if (view === 'tasks') renderTasks();
   if (view === 'challenges') renderChallenges();
+  if (view === 'progress') renderProgress();
   tick();
 }
 
@@ -795,6 +800,124 @@ function openChallengeForm(id) {
     }
     save(); closeSheet(); renderAll();
   });
+}
+
+/* ================= Прогрес ================= */
+
+// Кольори серій графіка (перевірені валідатором на темному фоні: розрізняються і при дальтонізмі)
+const WORK_C = '#8A74EE', LEARN_C = '#14A08E';
+const prog = { mode: 'week', sel: todayKey(), tip: null };
+
+// Записи дня для статистики: сьогодні — живі задачі, минулі — знімок дня
+function dayRecords(key) {
+  const today = todayKey();
+  if (key > today) return [];
+  if (key === today) {
+    return state.tasks.filter(isFlex).map((t) => ({
+      title: t.title, type: t.type, challenge: t.challenge, minutes: t.minutes,
+      done: t.status === 'done', fact: t.status === 'done' ? elapsedMs(t) / 60000 : 0,
+      breaks: [
+        ...(t.pauses || []).filter((p) => p.reason !== 'Перевірка').map((p) => ({ reason: p.reason, min: (p.end - p.start) / 60000 })),
+        ...(t.pausedAt ? [{ reason: t.pauseReason, min: (Date.now() - t.pausedAt) / 60000 }] : []),
+      ],
+    }));
+  }
+  return (state.history[key] || []).filter(isFlex).map((x) => ({ ...x, breaks: x.breaks || [] }));
+}
+
+function progDays() {
+  if (prog.mode === 'week') { const mon = mondayOf(prog.sel); return Array.from({ length: 7 }, (_, i) => addDays(mon, i)); }
+  const d = dateOf(prog.sel), total = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return Array.from({ length: total }, (_, i) => keyOf(d.getFullYear(), d.getMonth(), i + 1));
+}
+
+const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+
+function renderProgress() {
+  const today = todayKey(), days = progDays();
+  const recs = days.map((k) => ({ k, r: dayRecords(k) }));
+  const all = recs.flatMap((d) => d.r), done = all.filter((x) => x.done);
+  const work = recs.map((d) => sum(d.r.filter((x) => x.done && x.type === 'work'), (x) => x.fact || x.minutes));
+  const learn = recs.map((d) => sum(d.r.filter((x) => x.done && x.type === 'learn'), (x) => x.fact || x.minutes));
+  const focus = sum(work, (x) => x) + sum(learn, (x) => x);
+  const learnOk = days.filter((k, i) => k <= today && learn[i] >= 60).length;
+
+  // Період і навігація
+  const d0 = dateOf(days[0]), d1 = dateOf(days[days.length - 1]);
+  const label = prog.mode === 'week'
+    ? (d0.getMonth() === d1.getMonth() ? `${d0.getDate()}–${d1.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`
+      : `${d0.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })} – ${d1.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}`)
+    : `${MONTHS[d0.getMonth()]} ${d0.getFullYear()}`;
+  let h = `<header class="cal-head"><h1>Прогрес</h1></header>
+    <div class="seg">
+      <button class="${prog.mode === 'week' ? 'on' : ''}" data-action="prog-mode" data-mode="week">Тиждень</button>
+      <button class="${prog.mode === 'month' ? 'on' : ''}" data-action="prog-mode" data-mode="month">Місяць</button></div>
+    <div class="cal-nav"><button class="btn-quiet icon" data-action="prog-shift" data-n="-1" aria-label="Назад">${PREV_SVG}</button>
+      <span>${label}</span><button class="btn-quiet icon" data-action="prog-shift" data-n="1" aria-label="Вперед">${NEXT_SVG}</button></div>`;
+
+  if (!all.length) {
+    els.viewProgress.innerHTML = `${h}<div class="ch-empty"><p>Тут з'явиться статистика, щойно ти закриєш першу задачу в цьому періоді.</p></div>`;
+    return;
+  }
+
+  // Підсумки
+  const timed = done.filter((x) => x.fact > 0);
+  const ratio = timed.length ? sum(timed, (x) => x.fact) / sum(timed, (x) => x.minutes) : null;
+  const ratioText = ratio == null ? '—' : `×${ratio.toFixed(1).replace('.', ',')}`;
+  const ratioHint = ratio == null ? 'ще немає даних' : ratio > 1.15 ? 'задачі займають більше, ніж плануєш' : ratio < 0.85 ? 'плануєш із запасом' : 'оцінки точні';
+  h += `<div class="tiles">
+    <div class="tile"><span>Зроблено</span><b>${done.length} з ${all.length}</b><small>${Math.round((done.length / all.length) * 100)}% задач</small></div>
+    <div class="tile"><span>У фокусі</span><b>${focus ? dur(focus) : '0 хв'}</b><small>чистий час без перерв</small></div>
+    <div class="tile"><span>Навчання</span><b>${dur(sum(learn, (x) => x))}</b><small>${learnOk} з ${days.filter((k) => k <= today).length} днів по 1 год</small></div>
+    <div class="tile"><span>Факт / план</span><b>${ratioText}</b><small>${ratioHint}</small></div></div>`;
+
+  // Графік «Час по днях»: робота знизу, навчання зверху
+  const max = Math.max(60, ...days.map((_, i) => work[i] + learn[i]));
+  const H = 120, px = (m) => (m / max) * H;
+  const tipKey = prog.tip && days.includes(prog.tip) ? prog.tip : (days.includes(today) ? today : days[days.length - 1]);
+  const ti = days.indexOf(tipKey);
+  const tipLabel = dateOf(tipKey).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' });
+  h += `<section class="cal-section"><div class="cal-day-head"><h2>Час по днях</h2></div>
+    <div class="legend2"><span><i style="background:${WORK_C}"></i>робота</span><span><i style="background:${LEARN_C}"></i>навчання</span></div>
+    <div class="bars${prog.mode === 'month' ? ' thin' : ''}" style="--h:${H}px">${days.map((k, i) => {
+      const n = Number(k.slice(8));
+      const lab = prog.mode === 'week' ? WEEKDAYS[i][1] : (n === 1 || n % 5 === 0 ? n : '');
+      const w = px(work[i]), l = px(learn[i]);
+      return `<button class="bar${k === tipKey ? ' on' : ''}${k > today ? ' future' : ''}" data-action="prog-bar" data-key="${k}"
+        aria-label="${k}: робота ${dur(work[i])}, навчання ${dur(learn[i])}">
+        <span class="stack">${l ? `<i class="seg-l" style="height:${Math.max(l, 3)}px;background:${LEARN_C}"></i>` : ''}${w ? `<i class="seg-w" style="height:${Math.max(w, 3)}px;background:${WORK_C}"></i>` : ''}</span>
+        <span class="bl">${lab}</span></button>`;
+    }).join('')}</div>
+    <p class="tip"><b>${tipLabel.replace(/^./, (c) => c.toUpperCase())}</b> · робота ${dur(work[ti])} · навчання ${dur(learn[ti])}</p></section>`;
+
+  // Навчання по напрямах
+  const byDir = {};
+  for (const x of done.filter((y) => y.type === 'learn')) byDir[x.challenge || 'other'] = (byDir[x.challenge || 'other'] || 0) + (x.fact || x.minutes);
+  const dirs = Object.entries(byDir).sort((a, b) => b[1] - a[1]);
+  if (dirs.length) {
+    const top = dirs[0][1];
+    h += `<section class="cal-section"><div class="cal-day-head"><h2>Навчання по напрямах</h2></div>
+      ${dirs.map(([k, m]) => { const c = CHALLENGES[k]; return `<div class="hrow"><span class="hn"><span class="dot" style="background:${c ? c.color : 'var(--muted)'}"></span>${c ? c.name : 'Інше'}</span>
+        <span class="hb"><i style="width:${Math.max(4, (m / top) * 100)}%;background:${c ? c.color : 'var(--muted)'}"></i></span><span class="hv">${dur(m)}</span></div>`; }).join('')}</section>`;
+  }
+
+  // План проти факту: де найбільше розходиться
+  const over = timed.map((x) => ({ ...x, diff: x.fact - x.minutes })).filter((x) => x.diff >= 10).sort((a, b) => b.diff - a.diff).slice(0, 3);
+  h += `<section class="cal-section"><div class="cal-day-head"><h2>План проти факту</h2>
+      <span>${timed.length ? `планувала ${dur(sum(timed, (x) => x.minutes))}, вийшло ${dur(sum(timed, (x) => x.fact))}` : ''}</span></div>
+    ${over.length ? over.map((x) => `<div class="cal-row"><span class="cn">${esc(x.title)}</span><span class="cd">${dur(x.minutes)} → <b class="warn">${dur(x.fact)}</b></span></div>`).join('')
+      : `<p class="empty">${timed.length ? 'Жодна задача не затягнулась більше ніж на 10 хв.' : 'Закрий кілька задач з таймером — тут з\'явиться порівняння.'}</p>`}</section>`;
+
+  // Перериви
+  const breaks = all.flatMap((x) => x.breaks);
+  const byReason = {};
+  for (const b of breaks) { const r = b.reason || 'Без причини'; byReason[r] = (byReason[r] || { n: 0, m: 0 }); byReason[r].n++; byReason[r].m += b.min; }
+  h += `<section class="cal-section"><div class="cal-day-head"><h2>Перериви</h2>
+      <span>${breaks.length ? `${breaks.length} ${breaks.length === 1 ? 'раз' : breaks.length < 5 ? 'рази' : 'разів'}, разом ${dur(sum(breaks, (b) => b.min))}` : ''}</span></div>
+    ${breaks.length ? Object.entries(byReason).sort((a, b) => b[1].m - a[1].m).map(([r, v]) => `<div class="cal-row"><span class="cn">${esc(r)}</span><span class="cd">${v.n} × · ${dur(v.m)}</span></div>`).join('')
+      : '<p class="empty">Жодних пауз — чистий фокус.</p>'}</section>`;
+
+  els.viewProgress.innerHTML = h;
 }
 
 function dayListHtml(key) {
@@ -1734,6 +1857,14 @@ const actions = {
     document.querySelector('.app:not([hidden])').scrollTop = 0;
   },
   'cal-mode': (el) => { cal.mode = el.dataset.mode; renderTasks(); },
+  'prog-mode': (el) => { prog.mode = el.dataset.mode; prog.tip = null; renderProgress(); },
+  'prog-bar': (el) => { prog.tip = el.dataset.key; renderProgress(); },
+  'prog-shift': (el) => {
+    const n = Number(el.dataset.n);
+    if (prog.mode === 'week') prog.sel = addDays(prog.sel, 7 * n);
+    else { const d = dateOf(prog.sel); prog.sel = keyOf(d.getFullYear(), d.getMonth() + n, 1); }
+    prog.tip = null; renderProgress();
+  },
   'cal-pick': (el) => { cal.sel = el.dataset.key; renderTasks(); },
   'cal-today': () => { cal.sel = todayKey(); renderTasks(); },
   'cal-shift': (el) => { cal.sel = addDays(cal.sel, Number(el.dataset.n)); renderTasks(); },
@@ -1806,6 +1937,13 @@ const actions = {
     toast('Робочі задачі перенесено на завтра');
   },
   demo: seedDemo,
+  'demo-exit': () => {
+    if (active() && active().demo) { closePause(active()); }
+    state.tasks = state.tasks.filter((t) => !t.demo);
+    state.flags = freshFlags();
+    view = 'today';
+    save(); closeSheet(); renderAll();
+  },
 };
 
 document.addEventListener('click', (e) => {
@@ -1815,8 +1953,9 @@ document.addEventListener('click', (e) => {
   if (fn) fn(el);
 });
 
+// Демо-задачі позначені demo: true, щоб з демо-дня можна було вийти і почати свій план
 function seedDemo() {
-  const W = (title, result, minutes, extra = {}) => ({ id: uid(), title, result, minutes, type: 'work', status: 'todo', extra: 0, ...extra });
+  const W = (title, result, minutes, extra = {}) => ({ id: uid(), title, result, minutes, type: 'work', status: 'todo', extra: 0, demo: true, ...extra });
   state.tasks = [
     W('Пошта і задачі від ліда', 'Усі задачі з голосових записані в план', 30),
     W('Макет головної для клієнта', "Перший екран + меню у Figma, готові на рев'ю", 60),

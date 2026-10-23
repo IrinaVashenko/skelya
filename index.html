@@ -31,6 +31,10 @@
       <span id="date"></span>
       <span id="count"></span>
     </header>
+    <div class="demo-bar" id="demoBar" hidden>
+      <span>Це демо-день, щоб подивитись, як працює Скеля</span>
+      <button class="btn-quiet lg" data-action="demo-exit">Почати свій план</button>
+    </div>
 
     <section class="hero" id="hero">
       <!-- Порожній стан: Скеля і голографічні наліпки, що повільно «дихають» -->
@@ -149,6 +153,7 @@
   <!-- Задачі: тиждень, місяць, список дня і «Без дати» (малюється з app.js) -->
   <main class="app cal" id="viewTasks" hidden></main>
   <main class="app cal" id="viewChallenges" hidden></main>
+  <main class="app cal" id="viewProgress" hidden></main>
 
   <div class="dock">
   <nav class="tabbar glass-float" aria-label="Навігація">
@@ -164,7 +169,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5" /><rect x="14" y="4" width="6" height="6" rx="1.5" /><rect x="4" y="14" width="6" height="6" rx="1.5" /><rect x="14" y="14" width="6" height="6" rx="1.5" /></svg>
       <span>Челенджі</span>
     </button>
-    <button class="tab" data-action="soon">
+    <button class="tab" data-action="tab" data-tab="progress">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M12 20V5M19 20v-6" /></svg>
       <span>Прогрес</span>
     </button>

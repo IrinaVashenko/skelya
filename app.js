@@ -1610,7 +1610,7 @@ function start(id) {
   save();
   closeSheet();
   renderAll();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  els.viewToday.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function closePause(t) {
@@ -1727,7 +1727,12 @@ const actions = {
   },
   // На екрані «Задачі» нова задача одразу йде в обраний день
   add: () => openForm({ dayKey: view === 'tasks' && cal.sel >= todayKey() ? cal.sel : undefined }),
-  tab: (el) => { view = el.dataset.tab; closeSheet(); window.scrollTo(0, 0); renderAll(); },
+  tab: (el) => {
+    view = el.dataset.tab;
+    closeSheet();
+    renderAll();
+    document.querySelector('.app:not([hidden])').scrollTop = 0;
+  },
   'cal-mode': (el) => { cal.mode = el.dataset.mode; renderTasks(); },
   'cal-pick': (el) => { cal.sel = el.dataset.key; renderTasks(); },
   'cal-today': () => { cal.sel = todayKey(); renderTasks(); },

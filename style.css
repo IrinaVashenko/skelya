@@ -17,7 +17,13 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 
+/* Сторінка не прокручується — прокручується лише вміст екрана (.app).
+   Так панель браузера (Safari, Telegram) не ховається/не з'являється по-різному
+   на довгих і коротких екранах, і навбар завжди стоїть на одному місці. */
 html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -30,9 +36,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .muted { color: var(--muted); }
 
 .app {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 16px) 20px calc(env(safe-area-inset-bottom) + 112px);
+  box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* Вміст по центру (до 440px), а прокручується вся ширина екрана */
+  padding: calc(env(safe-area-inset-top) + 16px) max(20px, calc((100% - 440px) / 2)) calc(env(safe-area-inset-bottom) + 112px);
 }
 
 .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
@@ -82,7 +93,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 
 /* Перший екран: блок по центру, без навбару */
 body.is-empty .dock { display: none; }
-body.is-empty .app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
+body.is-empty .app { display: flex; flex-direction: column; padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
 body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
 .chips { display: flex; gap: 8px; }
 
@@ -455,3 +466,5 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .acc-opt.on .ok { opacity: 1; }
 .acc-opt:active { background: rgba(255, 255, 255, .05); }
 .btn-quiet.lg.danger { color: var(--red); border-color: rgba(255, 69, 58, .45); }
+.app { scrollbar-width: none; }
+.app::-webkit-scrollbar { display: none; }

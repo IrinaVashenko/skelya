@@ -190,7 +190,18 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
   border: 1px solid color-mix(in srgb, var(--ring) 65%, transparent);
   color: color-mix(in srgb, var(--ring) 70%, #fff);
 }
-.block.done { opacity: .4; }
+/* Зроблена задача: видно, що це і що вона закрита */
+.block.done {
+  background: rgba(48, 209, 88, .09);
+  border: .5px solid rgba(48, 209, 88, .4);
+  color: rgba(232, 232, 236, .78);
+}
+.block.done.tinted { background: rgba(48, 209, 88, .09); border-color: rgba(48, 209, 88, .4); color: rgba(232, 232, 236, .78); }
+.block .ic-done { width: 13px; height: 13px; flex: none; color: var(--green); stroke-width: 2.6; }
+.block .ic-pin { width: 12px; height: 12px; flex: none; opacity: .7; }
+.block em { font-style: normal; opacity: .65; }
+.block.tiny { padding: 0 8px; justify-content: center; font-size: 11px; line-height: 13px; border-radius: 6px; }
+.block.tiny .ic-done { width: 11px; height: 11px; }
 .block.interrupt {
   background: repeating-linear-gradient(135deg, rgba(255, 214, 10, .06) 0 5px, transparent 5px 10px);
   border: .5px dashed rgba(255, 214, 10, .45); color: rgba(255, 226, 107, .85); cursor: default;

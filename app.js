@@ -19,6 +19,8 @@ const CHALLENGES = {
 
 const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" aria-label="фіксована"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const PLUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const CHECK_SVG = '<svg class="ic-done" viewBox="0 0 24 24" aria-label="зроблено"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const PIN_SVG = '<svg class="ic-pin" viewBox="0 0 24 24" aria-label="час старту"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg>';
 
 const $ = (s) => document.querySelector(s);
 const pad = (n) => String(n).padStart(2, '0');
@@ -56,7 +58,8 @@ const elapsedMs = (t) => (t.pausedAt || t.finishedAt || Date.now()) - t.startedA
 const PAUSE_REASONS = ['Дзвінок', 'Термінова задача', 'Відійшла', 'Інше'];
 const taskColor = (t) => (t.challenge && CHALLENGES[t.challenge] ? CHALLENGES[t.challenge].color : null);
 const active = () => state.tasks.find((t) => t.status === 'active');
-const nextTask = () => state.tasks.find((t) => isFlex(t) && t.status === 'todo');
+// Наступна — та, що в плані стоїть найраніше (а не перша в списку)
+const nextTask = () => { const b = schedule().find((x) => isFlex(x.t) && x.t.status === 'todo'); return b ? b.t : null; };
 
 // dayStart — початок дня і роботи, workEnd — кінець роботи, dayEnd — межа дня
 const DEFAULTS = { dayStart: 600, workEnd: 1020, dayEnd: 1260, workDays: [1, 2, 3, 4, 5] };
@@ -90,7 +93,8 @@ function resetTask(t) {
 // Новий день: незакінчені задачі й заплановані на сьогодні переходять у план
 function rollover(s) {
   const key = todayKey();
-  const carry = s.tasks.filter((t) => isFlex(t) && t.status !== 'done').map(resetTask);
+  // Час старту стосувався вчора — на новий день задача йде без нього
+  const carry = s.tasks.filter((t) => isFlex(t) && t.status !== 'done').map((t) => { const r = resetTask(t); delete r.startAt; return r; });
   const planned = (s.future[key] || []).map(resetTask);
   const future = {};
   for (const [k, v] of Object.entries(s.future)) if (k > key) future[k] = v;
@@ -125,7 +129,9 @@ let state = load();
 function moveToTomorrow(t) {
   const k = addDays(todayKey(), 1);
   state.tasks = state.tasks.filter((x) => x !== t);
-  (state.future[k] = state.future[k] || []).push(resetTask(t));
+  const moved = resetTask(t);
+  delete moved.startAt;
+  (state.future[k] = state.future[k] || []).push(moved);
   state.flags.moved.push(t.title);
 }
 
@@ -151,10 +157,17 @@ function schedule() {
     }
   }
 
-  for (const t of state.tasks.filter((x) => isFlex(x) && x.status === 'todo')) {
+  // Задачі з часом старту стоять на своєму місці (якщо цей час ще не минув),
+  // решта йде одна за одною і обтікає їх так само, як фіксовані події
+  const todo = state.tasks.filter((x) => isFlex(x) && x.status === 'todo');
+  const anchored = todo.filter((t) => t.startAt != null && t.startAt >= cursor)
+    .map((t) => ({ t, start: t.startAt, end: t.startAt + t.minutes }));
+  out.push(...anchored);
+  const obstacles = [...fixed, ...anchored];
+  for (const t of todo.filter((x) => !anchored.some((a) => a.t === x))) {
     let s = cursor;
     for (let guard = 0; guard < 30; guard++) {
-      const f = fixed.find((x) => x.start < s + t.minutes && x.end > s);
+      const f = obstacles.find((x) => x.start < s + t.minutes && x.end > s);
       if (!f) break;
       s = f.end;
     }
@@ -168,7 +181,9 @@ function schedule() {
 function pieces(t, endMs) {
   const res = [];
   const seg = (a, b, extra = {}) => {
-    const s = minOfDay(a), e = Math.max(minOfDay(b), s + (t.status === 'done' ? 5 : 1));
+    // Блок закінчується рівно тоді, коли закінчилась робота (без штучного мінімуму),
+    // інакше він «перетинається» з наступною задачею і показується як конфлікт
+    const s = minOfDay(a), e = Math.max(minOfDay(b), s + 0.5);
     res.push({ t, start: s, end: e, ...extra });
   };
   const gap = (p, open) => {
@@ -353,14 +368,37 @@ function renderGrid() {
 
   for (let m = lo; m <= hi; m += 60) h += `<div class="hour" style="top:${y(m)}px"><span>${hhmm(m)}</span></div>`;
 
-  // Вільне вікно можна натиснути, щоб додати в нього задачу
+  // Короткий блок малюємо вищим, ніж його реальний час, щоб влізла назва.
+  // Якщо наступний блок у тій самій колонці стоїть впритул, він трохи зсувається вниз
+  // (як у календарях) — точний час однаково підписаний у блоці.
+  const MIN_H = 22;
+  const sorted = [...blocks].sort((a, b) => a.start - b.start);
+  const rects = new Map();
+  const colBottom = {};
+  for (const b of sorted) {
+    const keys = b.cols === 1 ? Object.keys(colBottom) : ['all', String(b.col)];
+    const prev = Math.max(-Infinity, ...keys.map((k) => colBottom[k] ?? -Infinity), colBottom.all ?? -Infinity);
+    const t0 = Math.max(y(b.start) + 1, prev + 2);
+    const hgt = Math.max(y(b.end) - y(b.start) - 2, MIN_H);
+    rects.set(b, { top: t0, h: hgt });
+    colBottom[b.cols === 1 ? 'all' : String(b.col)] = t0 + hgt;
+    if (b.cols === 1) for (const k of Object.keys(colBottom)) colBottom[k] = Math.max(colBottom[k], t0 + hgt);
+  }
+  const top = (b) => rects.get(b).top;
+  const bottom = (b) => top(b) + rects.get(b).h;
+
+  // Вільне вікно можна натиснути, щоб додати в нього задачу.
+  // Воно починається нижче за будь-який блок над ним, тож ніколи на них не налазить.
   const free = gaps(blocks);
   for (const x of free) {
-    if (x.end - x.start >= 15) {
-      h += `<button class="gap" data-action="gap" data-start="${x.start}" data-len="${Math.round(x.end - x.start)}"
-        style="top:${y(x.start) + 1}px;height:${y(x.end) - y(x.start) - 2}px" aria-label="Додати задачу у вільне вікно">
-        <span>вільно ${dur(x.end - x.start)}</span>${PLUS_SVG}</button>`;
-    }
+    if (x.end - x.start < 15) continue;
+    let gTop = y(x.start) + 1;
+    for (const b of blocks) if (top(b) <= gTop && bottom(b) > gTop) gTop = bottom(b) + 3;
+    const gBottom = y(x.end) - 1;
+    if (gBottom - gTop < 20) continue;
+    h += `<button class="gap" data-action="gap" data-start="${x.start}" data-len="${Math.round(x.end - x.start)}"
+      style="top:${gTop}px;height:${gBottom - gTop}px" aria-label="Додати задачу у вільне вікно">
+      <span>вільно ${dur(x.end - x.start)}</span>${PLUS_SVG}</button>`;
   }
 
   for (const b of blocks) {
@@ -372,7 +410,8 @@ function renderGrid() {
     if (t === next) cls.push('next');
     if (b.conflict) cls.push('conflict');
     if (b.cont) cls.push('part-next');
-    const ht = Math.max(y(b.end) - y(b.start) - 2, 20);
+    const ht = bottom(b) - top(b);
+    if (ht < 20) cls.push('tiny');
     if (t.type === 'interrupt') {
       h += `<div class="${cls.join(' ')}" style="top:${y(b.start) + 1}px;height:${ht}px;left:${GUTTER}px;width:calc(100% - ${GUTTER}px)">
         <span class="bt">${esc(t.title)} · ${dur(b.end - b.start)}</span></div>`;
@@ -380,10 +419,18 @@ function renderGrid() {
     }
     const w = `calc((100% - ${GUTTER}px) / ${b.cols} - 3px)`;
     const l = `calc(${GUTTER}px + (100% - ${GUTTER}px) / ${b.cols} * ${b.col})`;
-    const meta = `${hhmm(b.start)}–${hhmm(b.end)}${t.extra ? ` · +${t.extra} хв` : ''}`;
+    const isDone = t.status === 'done';
+    const pinned = t.status === 'todo' && t.startAt != null && b.start === t.startAt;
+    const meta = isDone
+      ? `зроблено · ${dur(elapsedMs(t) / 60000)}`
+      : `${hhmm(b.start)}–${hhmm(b.end)}${t.extra ? ` · +${t.extra} хв` : ''}`;
+    // Зроблена коротка задача: галочка, назва і час в одному рядку
+    const label = isDone
+      ? `${CHECK_SVG}${esc(t.title)}${ht <= 36 ? ` <em>· ${dur(elapsedMs(t) / 60000)}</em>` : ''}`
+      : `${pinned ? PIN_SVG : ''}${esc(t.title)}${t.type === 'fixed' ? LOCK_SVG : ''}`;
     h += `<button class="${cls.join(' ')}" data-action="open" data-id="${t.id}"
-      style="top:${y(b.start) + 1}px;height:${ht}px;left:${l};width:${w};${color ? `--c:${color}` : ''}">
-      <span class="bt">${esc(t.title)}${t.type === 'fixed' ? LOCK_SVG : ''}</span>${ht > 36 ? `<small>${meta}</small>` : ''}</button>`;
+      style="top:${top(b)}px;height:${ht}px;left:${l};width:${w};${color ? `--c:${color}` : ''}">
+      <span class="bt">${label}</span>${ht > 36 ? `<small>${meta}</small>` : ''}</button>`;
   }
 
   const n = nowMin();
@@ -613,13 +660,16 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
   const mins = [15, 30, 45, 60, 90, 120, 180];
   const pick = {
     type: task ? task.type : (preset && preset.type) || 'work',
+    when: (task && task.startAt != null) || gap ? 'at' : 'auto',
     challenge: (task && task.challenge) || 'ux',
     minutes: task ? task.minutes : gap ? (mins.filter((m) => m <= gap.len).pop() || 15) : (preset && preset.minutes) || 60,
   };
   if (!mins.includes(pick.minutes)) mins.push(pick.minutes);
   mins.sort((a, b) => a - b);
   const lockType = editing && task.status !== 'todo';
-  const at = hhmm(task && task.fixedStart != null ? task.fixedStart : gap ? gap.start : Math.ceil(nowMin() / 15) * 15);
+  const soon = Math.ceil(nowMin() / 15) * 15;
+  const at = hhmm(task && task.fixedStart != null ? task.fixedStart : gap ? gap.start : soon);
+  const startAt = hhmm(task && task.startAt != null ? task.startAt : gap ? gap.start : soon);
 
   let facts = '';
   if (editing && task.status === 'done') facts = `<p>Зроблено за ${dur(elapsedMs(task) / 60000)} · план ${dur(plan(task))}</p>`;
@@ -637,6 +687,9 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
     <label class="field" data-show="time" hidden><span>О котрій</span><input class="input" type="time" name="at" value="${at}"></label>
     <div class="field"><span>Скільки часу даєш</span>${choice('minutes', mins.map((m) => [m, dur(m)]), pick.minutes)}</div>
     <p class="hint" id="splitHint" hidden>Більше 2 год? Розбий на кроки.</p>
+    <div class="field" data-show="flex"><span>Коли почати</span>
+      ${choice('when', [['auto', 'Після попередньої'], ['at', 'О певній годині']], pick.when)}</div>
+    <label class="field" data-show="when-at" hidden><span>Початок</span><input class="input" type="time" name="startAt" value="${startAt}"></label>
     <p class="err" id="formErr"></p>
     <button class="btn-pearl" type="submit">${editing ? 'Зберегти' : 'Додати в план'}</button>
     ${editing ? `<div class="chips">
@@ -647,9 +700,10 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
   const form = $('#taskForm');
   const flexible = () => pick.type === 'work' || pick.type === 'learn';
   const sync = () => {
-    form.querySelector('[data-show="flex"]').hidden = !flexible();
+    form.querySelectorAll('[data-show="flex"]').forEach((x) => { x.hidden = !flexible(); });
     form.querySelector('[data-show="learn"]').hidden = pick.type !== 'learn';
     form.querySelector('[data-show="time"]').hidden = flexible();
+    form.querySelector('[data-show="when-at"]').hidden = !(flexible() && pick.when === 'at');
     $('#splitHint').hidden = !(pick.minutes > 120 && flexible());
   };
   bindChoices(form, pick, sync);
@@ -662,19 +716,18 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
 
     const t = task || { id: uid(), status: 'todo', extra: 0 };
     Object.assign(t, { title, type: pick.type, minutes: pick.minutes, lateAck: false });
-    if (flexible()) { t.result = result; delete t.fixedStart; } else { t.fixedStart = parseHHMM(form.elements.at.value || '12:00'); }
+    if (flexible()) {
+      t.result = result;
+      delete t.fixedStart;
+      if (pick.when === 'at') t.startAt = parseHHMM(form.elements.startAt.value || hhmm(soon)); else delete t.startAt;
+    } else {
+      t.fixedStart = parseHHMM(form.elements.at.value || '12:00');
+      delete t.startAt;
+    }
     if (pick.type === 'learn' || (pick.type === 'fixed' && task && task.challenge)) t.challenge = pick.challenge; else if (pick.type !== 'fixed') delete t.challenge;
     if (t.status === 'active') rearm(t);
 
-    if (!task) {
-      // У вільне вікно: ставимо задачу в чергу перед першою задачею, що йде після вікна
-      let idx = state.tasks.length;
-      if (gap && flexible()) {
-        const after = schedule().find((b) => isFlex(b.t) && b.t.status === 'todo' && b.start >= gap.start);
-        if (after) idx = state.tasks.indexOf(after.t);
-      }
-      state.tasks.splice(idx, 0, t);
-    }
+    if (!task) state.tasks.push(t);
     save();
     closeSheet();
     renderAll();

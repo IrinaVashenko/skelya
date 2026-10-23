@@ -20,6 +20,7 @@ const CHALLENGES = {
 const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" aria-label="фіксована"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const PLUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const CHECK_SVG = '<svg class="ic-done" viewBox="0 0 24 24" aria-label="зроблено"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const MISS_SVG = '<svg class="ic-miss" viewBox="0 0 24 24" aria-label="не зроблено"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 const PIN_SVG = '<svg class="ic-pin" viewBox="0 0 24 24" aria-label="час старту"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg>';
 
 const $ = (s) => document.querySelector(s);
@@ -30,6 +31,7 @@ const todayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)
 const addDays = (key, n) => { const [y, m, d] = key.split('-').map(Number); return todayKey(new Date(y, m - 1, d + n)); };
 const weekdayOf = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d).getDay(); };
 const dayLabel = (key) => {
+  if (key === 'backlog') return 'без дати';
   const [y, m, d] = key.split('-').map(Number);
   const s = new Date(y, m - 1, d).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' });
   return key === todayKey() ? `сьогодні, ${s}` : key === addDays(todayKey(), 1) ? `завтра, ${s}` : s;
@@ -98,7 +100,20 @@ function rollover(s) {
   const planned = (s.future[key] || []).map(resetTask);
   const future = {};
   for (const [k, v] of Object.entries(s.future)) if (k > key) future[k] = v;
-  return { ...s, date: key, tasks: [...carry, ...planned], future, flags: freshFlags() };
+
+  // Знімок минулого дня для календаря: що було в плані і що зроблено
+  const history = { ...(s.history || {}) };
+  const snap = (t) => ({
+    id: t.id, title: t.title, type: t.type, challenge: t.challenge, minutes: t.minutes,
+    done: t.status === 'done',
+    fact: t.status === 'done' && t.startedAt ? Math.round(elapsedMs(t) / 60000) : 0,
+    at: t.startedAt ? Math.round(minOfDay(t.startedAt)) : (t.fixedStart ?? t.startAt ?? null),
+  });
+  if (s.tasks.length) history[s.date] = s.tasks.map(snap);
+  for (const [k, v] of Object.entries(s.future)) if (k < key && v.length) history[k] = v.map(snap);
+  for (const k of Object.keys(history)) if (k < addDays(key, -120)) delete history[k];
+
+  return { ...s, date: key, tasks: [...carry, ...planned], future, history, flags: freshFlags() };
 }
 
 function load() {
@@ -112,6 +127,8 @@ function load() {
     s.future[k] = [...(s.future[k] || []), ...s.later];
   }
   delete s.later;
+  if (!Array.isArray(s.backlog)) s.backlog = [];
+  if (!s.history) s.history = {};
   if (!Array.isArray(s.routine)) s.routine = defaultRoutine();
   const { lunchOn, lunchStart, lunchMin, ...rest } = s.settings || {};
   s.settings = { ...DEFAULTS, ...rest };
@@ -125,6 +142,31 @@ function save() {
 }
 
 let state = load();
+
+// Список задач дня: сьогодні, майбутній день або «Без дати» (backlog)
+function listFor(key) {
+  if (key === todayKey()) return state.tasks;
+  if (key === 'backlog') return state.backlog;
+  return (state.future[key] = state.future[key] || []);
+}
+
+function findTask(id) {
+  if (state.tasks.some((t) => t.id === id)) return { task: state.tasks.find((t) => t.id === id), key: todayKey() };
+  const b = state.backlog.find((t) => t.id === id);
+  if (b) return { task: b, key: 'backlog' };
+  for (const [k, list] of Object.entries(state.future)) {
+    const t = list.find((x) => x.id === id);
+    if (t) return { task: t, key: k };
+  }
+  return null;
+}
+
+function removeTask(id) {
+  const f = findTask(id);
+  if (!f) return;
+  const list = listFor(f.key);
+  list.splice(list.indexOf(f.task), 1);
+}
 
 function moveToTomorrow(t) {
   const k = addDays(todayKey(), 1);
@@ -175,6 +217,51 @@ function schedule() {
     cursor = s + t.minutes;
   }
   return out.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+// Розклад іншого дня: та сама логіка, але без «зараз» і без задач у процесі
+function scheduleFor(key) {
+  if (key === todayKey()) return schedule();
+  const list = listFor(key);
+  const fixed = [...list.filter((t) => !isFlex(t)), ...routineFor(key)]
+    .map((t) => ({ t, start: t.fixedStart, end: t.fixedStart + t.minutes }));
+  const todo = list.filter(isFlex);
+  const anchored = todo.filter((t) => t.startAt != null).map((t) => ({ t, start: t.startAt, end: t.startAt + t.minutes }));
+  const out = [...fixed, ...anchored];
+  const obstacles = [...out];
+  let cursor = state.settings.dayStart;
+  for (const t of todo.filter((x) => x.startAt == null)) {
+    let s = cursor;
+    for (let guard = 0; guard < 30; guard++) {
+      const f = obstacles.find((x) => x.start < s + t.minutes && x.end > s);
+      if (!f) break;
+      s = f.end;
+    }
+    out.push({ t, start: s, end: s + t.minutes });
+    cursor = s + t.minutes;
+  }
+  return out.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+// Завантаженість дня для смуги тижня і крапок місяця
+function dayLoad(key) {
+  const { dayStart, dayEnd } = state.settings;
+  const cap = dayEnd - dayStart;
+  if (key < todayKey()) {
+    const h = state.history[key] || [];
+    const busy = h.reduce((s, x) => s + (x.done ? x.fact || x.minutes : 0), 0);
+    return { ratio: busy / cap, over: false, work: h.some((x) => x.type === 'work'), learn: h.some((x) => x.type === 'learn'), count: h.filter(isFlex).length };
+  }
+  const blocks = scheduleFor(key).filter((b) => b.t.type !== 'interrupt');
+  const busy = blocks.reduce((s, b) => s + Math.max(0, Math.min(b.end, dayEnd) - Math.max(b.start, dayStart)), 0);
+  const list = listFor(key);
+  return {
+    ratio: busy / cap,
+    over: busy > cap || blocks.some((b) => isFlex(b.t) && b.t.status === 'todo' && b.end > dayEnd),
+    work: list.some((t) => t.type === 'work'),
+    learn: list.some((t) => t.type === 'learn' || (t.type === 'fixed' && t.challenge)),
+    count: list.filter(isFlex).length,
+  };
 }
 
 // Задача з паузами розрізається: шматок роботи → перерва → продовження
@@ -252,6 +339,7 @@ const els = {
   date: $('#date'), count: $('#count'), arc: $('#arc'), ringTime: $('#ringTime'), ringSub: $('#ringSub'),
   heroActions: $('#heroActions'), grid: $('#grid'), free: $('#free'), hours: $('#hours'), nudge: $('#nudge'),
   calm: $('#calm'), ringBox: $('#ringBox'), planSection: $('#planSection'),
+  viewToday: $('#viewToday'), viewTasks: $('#viewTasks'),
   mini: $('#mini'), miniArc: $('#miniArc'), miniTime: $('#miniTime'), miniTotal: $('#miniTotal'),
   overlay: $('#overlay'), sheet: $('#sheet'), toast: $('#toast'),
 };
@@ -449,12 +537,128 @@ function renderAll() {
   els.hours.textContent = isWorkday()
     ? `робота ${hhmm(s.dayStart)}–${hhmm(s.workEnd)} · до ${hhmm(s.dayEnd)}`
     : `вихідний · до ${hhmm(s.dayEnd)}`;
-  // Поки немає жодної задачі, на екрані тільки Скеля і дві дії
+  // Поки немає жодних задач (ні сьогодні, ні в майбутньому, ні без дати) — тільки Скеля і дві дії
+  const noData = !state.tasks.length && !state.backlog.length && !Object.values(state.future).some((l) => l.length);
   els.planSection.hidden = !state.tasks.length;
-  document.body.classList.toggle('is-empty', !state.tasks.length);
+  document.body.classList.toggle('is-empty', noData);
+  if (noData) view = 'today';
+  els.viewToday.hidden = view !== 'today';
+  els.viewTasks.hidden = view !== 'tasks';
+  document.querySelectorAll('.tab[data-tab]').forEach((b) => {
+    const on = b.dataset.tab === view;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
   renderHero();
   renderGrid();
+  if (view === 'tasks') renderTasks();
   tick();
+}
+
+/* ================= Екран «Задачі»: тиждень, місяць, список дня, без дати ================= */
+
+let view = 'today';
+const cal = { mode: 'week', sel: todayKey() };
+const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
+const keyOf = (y, m, d) => todayKey(new Date(y, m, d));
+const dateOf = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
+const mondayOf = (key) => addDays(key, -((weekdayOf(key) + 6) % 7));
+const PREV_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+const NEXT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+
+function loadBar(l) {
+  const w = Math.min(100, Math.round(l.ratio * 100));
+  return `<span class="load"><i style="width:${w}%;${l.over ? 'background:var(--red)' : ''}"></i></span>`;
+}
+
+function renderTasks() {
+  const sel = cal.sel, today = todayKey();
+  const [y, m] = sel.split('-').map(Number);
+  let h = `<header class="cal-head"><h1>${MONTHS[m - 1]}${y !== new Date().getFullYear() ? ` ${y}` : ''}</h1>
+    ${sel !== today ? '<button class="link" data-action="cal-today">Сьогодні</button>' : ''}</header>
+    <div class="seg" role="tablist">
+      <button class="${cal.mode === 'week' ? 'on' : ''}" data-action="cal-mode" data-mode="week">Тиждень</button>
+      <button class="${cal.mode === 'month' ? 'on' : ''}" data-action="cal-mode" data-mode="month">Місяць</button></div>`;
+
+  if (cal.mode === 'week') {
+    const mon = mondayOf(sel);
+    const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
+    const d0 = dateOf(mon), d6 = dateOf(days[6]);
+    const range = d0.getMonth() === d6.getMonth()
+      ? `${d0.getDate()}–${d6.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`
+      : `${d0.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })} – ${d6.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}`;
+    h += `<div class="cal-nav"><button class="btn-quiet icon" data-action="cal-shift" data-n="-7" aria-label="Попередній тиждень">${PREV_SVG}</button>
+      <span>${range}</span><button class="btn-quiet icon" data-action="cal-shift" data-n="7" aria-label="Наступний тиждень">${NEXT_SVG}</button></div>
+      <div class="week">${days.map((k, i) => {
+        const d = Number(k.slice(8));
+        return `<button class="wd${k === sel ? ' on' : ''}${k === today ? ' today' : ''}${k < today ? ' past' : ''}" data-action="cal-pick" data-key="${k}">
+          <span class="wn">${WEEKDAYS[i][1]}</span><b>${d}</b>${loadBar(dayLoad(k))}</button>`;
+      }).join('')}</div>`;
+  } else {
+    const first = keyOf(y, m - 1, 1);
+    const offset = (weekdayOf(first) + 6) % 7;
+    const total = new Date(y, m, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < offset; i++) cells += '<span></span>';
+    for (let d = 1; d <= total; d++) {
+      const k = keyOf(y, m - 1, d);
+      const l = dayLoad(k);
+      const dots = [l.work ? '<i class="dw"></i>' : '', l.learn ? '<i class="dl"></i>' : '', l.over ? '<i class="dr"></i>' : ''].join('');
+      cells += `<button class="md${k === sel ? ' on' : ''}${k === today ? ' today' : ''}${k < today ? ' past' : ''}" data-action="cal-pick" data-key="${k}">
+        ${d}<span class="dots">${dots}</span></button>`;
+    }
+    h += `<div class="cal-nav"><button class="btn-quiet icon" data-action="cal-month" data-n="-1" aria-label="Попередній місяць">${PREV_SVG}</button>
+      <span>${MONTHS[m - 1]} ${y}</span><button class="btn-quiet icon" data-action="cal-month" data-n="1" aria-label="Наступний місяць">${NEXT_SVG}</button></div>
+      <div class="month">${WEEKDAYS.map(([, n]) => `<span class="mh">${n}</span>`).join('')}${cells}</div>
+      <div class="legend"><span><i class="dw"></i>робота</span><span><i class="dl"></i>навчання</span><span><i class="dr"></i>не вміщається</span></div>`;
+  }
+
+  h += dayListHtml(sel);
+
+  const bl = state.backlog;
+  h += `<section class="cal-section"><div class="cal-day-head"><h2>Без дати${bl.length ? ` · ${bl.length}` : ''}</h2></div>
+    ${bl.length ? bl.map((t) => `<button class="cal-row" data-action="open" data-id="${t.id}">
+      <span class="ct"></span><span class="cn">${taskColor(t) ? `<span class="dot" style="background:${taskColor(t)}"></span>` : ''}${esc(t.title)}</span>
+      <span class="cd">${dur(t.minutes)}</span></button>`).join('')
+    : '<p class="empty">Тут живуть задачі «колись». Признач їм день, коли буде час.</p>'}
+    <button class="btn-quiet lg" data-action="add-backlog">Додати без дати</button></section>`;
+
+  els.viewTasks.innerHTML = h;
+}
+
+function dayListHtml(key) {
+  const today = todayKey();
+  let rows = '', summary = '';
+  if (key < today) {
+    const h = [...(state.history[key] || [])].sort((a, b) => (a.at ?? 9999) - (b.at ?? 9999));
+    const done = h.filter((x) => x.done).length, flex = h.filter(isFlex).length;
+    summary = h.length ? `зроблено ${done} з ${flex}` : '';
+    rows = h.map((x) => `<div class="cal-row hist${x.done ? ' ok' : ' miss'}">
+      <span class="ct">${x.at != null ? hhmm(x.at) : ''}</span>
+      <span class="cn">${x.done ? CHECK_SVG : MISS_SVG}${esc(x.title)}</span>
+      <span class="cd">${x.done ? dur(x.fact || x.minutes) : 'не зроблено'}</span></div>`).join('');
+    if (!h.length) rows = '<p class="empty">Про цей день немає записів.</p>';
+  } else {
+    const seen = new Set();
+    const blocks = scheduleFor(key).filter((b) => b.t.type !== 'interrupt' && !seen.has(b.t.id) && seen.add(b.t.id));
+    const l = dayLoad(key);
+    const flexMin = listFor(key).filter(isFlex).reduce((s, t) => s + t.minutes, 0);
+    summary = l.count ? `${l.count} ${l.count === 1 ? 'задача' : l.count < 5 ? 'задачі' : 'задач'} · ${dur(flexMin)}` : '';
+    rows = blocks.map((b) => {
+      const t = b.t, c = taskColor(t);
+      const icon = t.status === 'done' ? CHECK_SVG : t.status === 'active' ? '<span class="live"></span>' : t.startAt != null && isFlex(t) ? PIN_SVG : '';
+      return `<button class="cal-row${t.virtual || t.type === 'break' ? ' quiet' : ''}${t.status === 'done' ? ' ok' : ''}${isFlex(t) && b.end > state.settings.dayEnd ? ' late' : ''}" data-action="open" data-id="${t.id}">
+        <span class="ct">${hhmm(b.start)}</span>
+        <span class="cn">${icon}${c ? `<span class="dot" style="background:${c}"></span>` : ''}${esc(t.title)}${t.type === 'fixed' ? LOCK_SVG : ''}</span>
+        <span class="cd">${dur(t.minutes)}</span></button>`;
+    }).join('') || '<p class="empty">На цей день нічого не заплановано.</p>';
+    if (l.over) summary += `${summary ? ' · ' : ''}<span class="warn">не вміщається</span>`;
+  }
+  // Коротко: «Сьогодні», «Завтра» або «Пн, 26 жовтня» (дату й так видно в календарі)
+  const label = key === today ? 'Сьогодні' : key === addDays(today, 1) ? 'Завтра'
+    : dateOf(key).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' }).replace(/^./, (c) => c.toUpperCase());
+  return `<section class="cal-section"><div class="cal-day-head"><h2>${label}</h2><span>${summary}</span></div>
+    ${rows}${key >= today ? `<button class="btn-quiet lg" data-action="add-day" data-key="${key}">Задача на цей день</button>` : ''}</section>`;
 }
 
 /* Компактна панель: видно, коли великий таймер прокручено */
@@ -655,8 +859,11 @@ function rearm(t) {
   if (rem > 0) { t.warnedEnd = false; t.lastNag = 0; }
 }
 
-function openForm({ task = null, gap = null, preset = null } = {}) {
+function openForm({ task = null, gap = null, preset = null, dayKey = null } = {}) {
   const editing = !!task;
+  const today = todayKey(), tomorrow = addDays(today, 1);
+  // З якого дня задача: для редагування — де вона лежить, для нової — обраний день або сьогодні
+  const srcKey = editing ? (findTask(task.id) || { key: today }).key : (dayKey || today);
   const RANGE_MAX = 480;
   const pick = {
     type: task ? task.type : (preset && preset.type) || 'work',
@@ -664,7 +871,9 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
     challenge: (task && task.challenge) || 'ux',
     // У вільне вікно: стільки, скільки вміщається, але не більше години (кратно 5 хв)
     minutes: task ? task.minutes : gap ? Math.max(5, Math.min(60, Math.floor(gap.len / 5) * 5)) : (preset && preset.minutes) || 60,
+    day: srcKey === 'backlog' ? 'none' : srcKey === today ? 'today' : srcKey === tomorrow ? 'tomorrow' : 'date',
   };
+  const canMove = !editing || task.status === 'todo';
   const lockType = editing && task.status !== 'todo';
   const soon = Math.ceil(nowMin() / 15) * 15;
   const at = hhmm(task && task.fixedStart != null ? task.fixedStart : gap ? gap.start : soon);
@@ -674,12 +883,15 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
   if (editing && task.status === 'done') facts = `<p>Зроблено за ${dur(elapsedMs(task) / 60000)} · план ${dur(plan(task))}</p>`;
   if (editing && task.status === 'active') facts = `<p>Зараз у роботі · план ${dur(plan(task))}${task.extra ? ` (+${task.extra} хв)` : ''}</p>`;
   if (gap) facts = `<p>Вільне вікно ${hhmm(gap.start)}–${hhmm(gap.start + gap.len)} · ${dur(gap.len)}</p>`;
-  const canStart = editing && isFlex(task) && task.status === 'todo' && !active();
+  const canStart = editing && srcKey === today && isFlex(task) && task.status === 'todo' && !active();
 
   openSheet(`<form id="taskForm" class="form" novalidate>
     <h3>${editing ? 'Задача' : 'Нова задача'}</h3>${facts}
     <label class="field"><span>Що робиш</span><input class="input" name="title" autocomplete="off" placeholder="Макет головної для клієнта" value="${esc(task ? task.title : '')}"></label>
     <label class="field" data-show="flex"><span>Що буде результатом</span><input class="input" name="result" autocomplete="off" placeholder="Перший екран + меню, готові на рев'ю" value="${esc(task ? task.result : '')}"></label>
+    <div class="field"${canMove ? '' : ' hidden'}><span>День</span>
+      ${choice('day', [['today', 'Сьогодні'], ['tomorrow', 'Завтра'], ['date', 'Інший день'], ['none', 'Без дати']], pick.day)}</div>
+    <label class="field" data-show="day-date" hidden><span>Дата</span><input class="input" type="date" name="dayDate" min="${today}" value="${srcKey !== 'backlog' && srcKey > tomorrow ? srcKey : addDays(today, 2)}"></label>
     <div class="field"${lockType ? ' hidden' : ''}><span>Тип</span>
       ${choice('type', [['work', 'Робота'], ['learn', 'Навчання'], ['fixed', 'Фіксована'], ['break', 'Перерва']], pick.type)}</div>
     <div class="field" data-show="learn" hidden><span>Челендж</span>${challengeChoice(pick.challenge)}</div>
@@ -694,7 +906,7 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
         <div class="range-scale"><span>5 хв</span><span>2 год</span><span>4 год</span><span>6 год</span><span>8 год</span></div>
       </div></div>
     <p class="hint" id="splitHint" hidden>Більше 2 год? Розбий на кроки.</p>
-    <div class="field" data-show="flex"><span>Коли почати</span>
+    <div class="field" data-show="when"><span>Коли почати</span>
       ${choice('when', [['auto', 'Після попередньої'], ['at', 'О певній годині']], pick.when)}</div>
     <label class="field" data-show="when-at" hidden><span>Початок</span><input class="input" type="time" name="startAt" value="${startAt}"></label>
     <p class="err" id="formErr"></p>
@@ -710,7 +922,10 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
     form.querySelectorAll('[data-show="flex"]').forEach((x) => { x.hidden = !flexible(); });
     form.querySelector('[data-show="learn"]').hidden = pick.type !== 'learn';
     form.querySelector('[data-show="time"]').hidden = flexible();
-    form.querySelector('[data-show="when-at"]').hidden = !(flexible() && pick.when === 'at');
+    // Без дати час старту не має сенсу
+    form.querySelector('[data-show="when"]').hidden = !flexible() || pick.day === 'none';
+    form.querySelector('[data-show="when-at"]').hidden = !(flexible() && pick.when === 'at' && pick.day !== 'none');
+    form.querySelector('[data-show="day-date"]').hidden = pick.day !== 'date';
     $('#splitHint').hidden = !(pick.minutes > 120 && flexible());
   };
   bindChoices(form, pick, sync);
@@ -741,6 +956,10 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
     if (!title) { $('#formErr').textContent = 'Напиши, що робиш.'; return; }
     if (flexible() && !result) { $('#formErr').textContent = 'Напиши, що буде результатом — так ти знатимеш, коли задача готова.'; return; }
     if (pick.minutes < 5 || pick.minutes > 12 * 60) { $('#formErr').textContent = 'Вкажи тривалість від 5 хв до 12 год.'; return; }
+    const target = pick.day === 'today' ? today : pick.day === 'tomorrow' ? tomorrow : pick.day === 'none' ? 'backlog' : form.elements.dayDate.value;
+    if (!target) { $('#formErr').textContent = 'Обери дату.'; return; }
+    if (target !== 'backlog' && target < today) { $('#formErr').textContent = 'Ця дата вже минула.'; return; }
+    if (target === 'backlog' && !flexible()) { $('#formErr').textContent = 'Фіксовану подію чи перерву треба прив\'язати до дня.'; return; }
 
     const t = task || { id: uid(), status: 'todo', extra: 0 };
     Object.assign(t, { title, type: pick.type, minutes: pick.minutes, lateAck: false });
@@ -753,13 +972,21 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
       delete t.startAt;
     }
     if (pick.type === 'learn' || (pick.type === 'fixed' && task && task.challenge)) t.challenge = pick.challenge; else if (pick.type !== 'fixed') delete t.challenge;
+    if (target === 'backlog') delete t.startAt;
     if (t.status === 'active') rearm(t);
 
-    if (!task) state.tasks.push(t);
+    if (!task) listFor(target).push(t);
+    else if (target !== srcKey) {
+      // Перенесення на інший день або в «Без дати»
+      const src = listFor(srcKey);
+      src.splice(src.indexOf(task), 1);
+      listFor(target).push(resetTask(t));
+      toast(target === 'backlog' ? 'Перенесено в «Без дати»' : `Перенесено на ${dayLabel(target)}`);
+    }
     save();
     closeSheet();
     renderAll();
-    checkLate();
+    if (target === today) checkLate();
   });
   sync();
   if (!editing) setTimeout(() => form.elements.title.focus(), 250);
@@ -767,8 +994,8 @@ function openForm({ task = null, gap = null, preset = null } = {}) {
 
 function openTask(id) {
   if (id.startsWith('r:')) { openRoutineForm(id.slice(2)); return; }
-  const t = state.tasks.find((x) => x.id === id);
-  if (t) openForm({ task: t });
+  const f = findTask(id);
+  if (f) openForm({ task: f.task });
 }
 
 /* ---------- Мій день і мій розклад ---------- */
@@ -955,7 +1182,8 @@ function parsePlan(text) {
         let y = dm[3] ? Number(dm[3]) : new Date().getFullYear();
         if (y < 100) y += 2000;
         cur = `${y}-${pad(dm[2])}-${pad(dm[1])}`;
-      } else if (/сьогодні/i.test(line)) cur = today;
+      } else if (/без\s+дати/i.test(line)) cur = 'backlog';
+      else if (/сьогодні/i.test(line)) cur = today;
       else if (/завтра/i.test(line)) cur = addDays(today, 1);
       continue;
     }
@@ -1006,7 +1234,6 @@ function parsePlan(text) {
   return { days, routine, skipped };
 }
 
-const listFor = (key) => (key === todayKey() ? state.tasks : (state.future[key] = state.future[key] || []));
 const overlaps = (a, b) => a.fixedStart < b.fixedStart + b.minutes && b.fixedStart < a.fixedStart + a.minutes;
 const sameTitle = (a, b) => a.title.trim().toLowerCase() === b.title.trim().toLowerCase();
 
@@ -1015,7 +1242,7 @@ function findConflicts(days) {
   const conflicts = [];
   for (const [key, list] of Object.entries(days)) {
     const existing = listFor(key);
-    const routine = routineFor(key);
+    const routine = key === 'backlog' ? [] : routineFor(key);
     days[key] = list.filter((t) => {
       if (!isFlex(t) && routine.some((r) => sameTitle(r, t) && r.fixedStart === t.fixedStart)) return false; // вже є в розкладі
       let other = null, kind = '';
@@ -1246,7 +1473,22 @@ const actions = {
   extend: (el) => extend(Number(el.dataset.min)),
   custom: openCustom,
   menu: openMenu,
-  add: () => openForm(),
+  // На екрані «Задачі» нова задача одразу йде в обраний день
+  add: () => openForm({ dayKey: view === 'tasks' && cal.sel >= todayKey() ? cal.sel : undefined }),
+  'add-day': (el) => openForm({ dayKey: el.dataset.key }),
+  'add-backlog': () => openForm({ dayKey: 'backlog' }),
+  tab: (el) => { view = el.dataset.tab; closeSheet(); window.scrollTo(0, 0); renderAll(); },
+  'cal-mode': (el) => { cal.mode = el.dataset.mode; renderTasks(); },
+  'cal-pick': (el) => { cal.sel = el.dataset.key; renderTasks(); },
+  'cal-today': () => { cal.sel = todayKey(); renderTasks(); },
+  'cal-shift': (el) => { cal.sel = addDays(cal.sel, Number(el.dataset.n)); renderTasks(); },
+  'cal-month': (el) => {
+    const d = dateOf(cal.sel);
+    const t = new Date(d.getFullYear(), d.getMonth() + Number(el.dataset.n), 1);
+    const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+    cal.sel = keyOf(t.getFullYear(), t.getMonth(), Math.min(d.getDate(), last));
+    renderTasks();
+  },
   'add-learn': () => openForm({ preset: { type: 'learn', minutes: 60 } }),
   gap: (el) => openForm({ gap: { start: Number(el.dataset.start), len: Number(el.dataset.len) } }),
   open: (el) => openTask(el.dataset.id),
@@ -1263,7 +1505,7 @@ const actions = {
   close: closeSheet,
   soon: () => toast('Цей розділ буде згодом'),
   delete: (el) => {
-    state.tasks = state.tasks.filter((t) => t.id !== el.dataset.id);
+    removeTask(el.dataset.id);
     save(); closeSheet(); renderAll();
   },
   pause,

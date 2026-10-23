@@ -281,11 +281,73 @@ body.is-empty .hero { flex: 1; justify-content: center; padding: 0 0 24px; }
 .input:focus { border-color: rgba(255, 255, 255, .4); }
 .input { min-width: 0; max-width: 100%; }
 /* Safari на iPhone дає полю часу власну ширину і ігнорує width: 100% — прибираємо системний стиль */
-input[type="time"].input {
+input[type="time"].input, input[type="date"].input {
   -webkit-appearance: none; appearance: none;
   display: block; width: 100%; min-height: 46px; text-align: left;
 }
-input[type="time"].input::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input::-webkit-date-and-time-value { text-align: left; margin: 0; }
+
+/* ---------- Екран «Задачі» ---------- */
+.cal-head { display: flex; justify-content: space-between; align-items: baseline; }
+.cal-head h1 { margin: 0; font-size: 28px; font-weight: 500; }
+.cal-head .link { font-size: 15px; color: var(--text); }
+.seg { display: flex; margin-top: 14px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .06); border: .5px solid rgba(255, 255, 255, .1); }
+.seg button { flex: 1; padding: 9px; border-radius: 999px; font-size: 15px; font-weight: 500; color: var(--muted); }
+.seg button.on { background: rgba(255, 255, 255, .14); color: var(--text); }
+.cal-nav { display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px; font-size: 15px; font-weight: 500; }
+.cal-nav .btn-quiet.icon { flex: 0 0 40px; height: 40px; }
+.cal-nav .btn-quiet.icon svg { width: 18px; height: 18px; stroke-width: 2.2; }
+
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.wd { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 9px; border-radius: 14px; }
+.wd .wn { font-size: 12px; color: var(--muted); }
+.wd b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.wd.today b { color: var(--red); }
+.wd.on { background: var(--text); color: #121214; }
+.wd.on .wn { color: rgba(18, 18, 20, .6); }
+.wd.on.today b { color: #121214; }
+.wd.past:not(.on) { opacity: .55; }
+.load { width: 22px; height: 3px; border-radius: 2px; background: #2C2C30; overflow: hidden; }
+.load i { display: block; height: 100%; background: var(--text); border-radius: 2px; }
+.wd.on .load { background: rgba(18, 18, 20, .2); }
+.wd.on .load i { background: #121214; }
+
+.month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.month .mh { font-size: 12px; color: var(--muted); padding: 4px 0 6px; }
+.md { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 6px; border-radius: 12px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.md.today { color: var(--red); font-weight: 500; }
+.md.on { background: var(--text); color: #121214; }
+.md.past:not(.on) { opacity: .5; }
+.dots { display: flex; gap: 3px; height: 5px; }
+.dots i, .legend i { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.dw { background: var(--text); }
+.dl { background: #2F7DFF; }
+.dr { background: var(--red); }
+.md.on .dw { background: #121214; }
+.legend { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.legend i { margin-right: 5px; vertical-align: 1px; }
+
+.cal-section { margin-top: 26px; display: flex; flex-direction: column; }
+.cal-section > .btn-quiet.lg { margin-top: 14px; }
+.cal-day-head { display: flex; flex-direction: column; gap: 3px; margin-bottom: 4px; }
+.cal-day-head h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.cal-day-head span { font-size: 13px; color: var(--muted); }
+.cal-day-head span:empty { display: none; }
+.cal-day-head .warn { color: var(--red); }
+.cal-row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: .5px solid var(--line); text-align: left; font-size: 16px; }
+.cal-row .ct { width: 44px; flex: none; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cal-row .cn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cal-row .cd { font-size: 14px; color: var(--muted); white-space: nowrap; }
+.cal-row .lock { width: 12px; height: 12px; opacity: .6; flex: none; }
+.cal-row .ic-done { width: 15px; height: 15px; color: var(--green); stroke-width: 2.6; flex: none; }
+.cal-row .ic-miss { width: 14px; height: 14px; color: var(--red); stroke-width: 2.4; flex: none; }
+.cal-row .ic-pin { width: 14px; height: 14px; opacity: .7; flex: none; }
+.cal-row .dot { margin-right: 0; flex: none; }
+.cal-row.quiet .cn { color: var(--muted); }
+.cal-row.ok .cn { color: rgba(232, 232, 236, .78); }
+.cal-row.late .ct { color: var(--red); }
+.cal-row.hist.miss .cn { color: var(--muted); }
+.live { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); flex: none; }
 
 /* Тривалість: години + хвилини і повзунок */
 .dur-box { display: flex; flex-direction: column; gap: 12px; }

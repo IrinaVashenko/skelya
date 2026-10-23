@@ -1705,10 +1705,20 @@ const actions = {
     if (ch) ch.archived = true;
     save(); renderChallenges();
   },
+  // Системний confirm() блокується у вбудованому браузері Telegram і в апці на екрані iPhone,
+  // тому підтвердження — власним вікном
   'ch-delete': (el) => {
-    if (!confirm('Видалити челендж разом з усім прогресом?')) return;
+    const ch = state.challenges.find((c) => c.id === el.dataset.id);
+    if (!ch) return;
+    openSheet(`<h3>Видалити челендж?</h3>
+      <p>«${esc(ch.title)}» і весь його прогрес зникнуть. Це не можна скасувати.</p>
+      <button class="btn-quiet lg danger" data-action="ch-delete-yes" data-id="${ch.id}">Видалити</button>
+      <button class="btn-quiet lg" data-action="ch-edit" data-id="${ch.id}">Скасувати</button>`);
+  },
+  'ch-delete-yes': (el) => {
     state.challenges = state.challenges.filter((c) => c.id !== el.dataset.id);
     save(); closeSheet(); renderAll();
+    toast('Челендж видалено');
   },
   'ch-restore': (el) => {
     const ch = state.challenges.find((c) => c.id === el.dataset.id);

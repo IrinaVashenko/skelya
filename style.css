@@ -454,3 +454,4 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
 .acc-opt .ok { margin-left: auto; width: 18px; height: 18px; stroke-width: 2.4; opacity: 0; }
 .acc-opt.on .ok { opacity: 1; }
 .acc-opt:active { background: rgba(255, 255, 255, .05); }
+.btn-quiet.lg.danger { color: var(--red); border-color: rgba(255, 69, 58, .45); }

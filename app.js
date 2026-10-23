@@ -129,6 +129,7 @@ function load() {
   delete s.later;
   if (!Array.isArray(s.backlog)) s.backlog = [];
   if (!s.history) s.history = {};
+  if (!Array.isArray(s.challenges)) s.challenges = [];
   if (!Array.isArray(s.routine)) s.routine = defaultRoutine();
   const { lunchOn, lunchStart, lunchMin, ...rest } = s.settings || {};
   s.settings = { ...DEFAULTS, ...rest };
@@ -339,7 +340,7 @@ const els = {
   date: $('#date'), count: $('#count'), arc: $('#arc'), ringTime: $('#ringTime'), ringSub: $('#ringSub'),
   heroActions: $('#heroActions'), grid: $('#grid'), free: $('#free'), hours: $('#hours'), nudge: $('#nudge'),
   calm: $('#calm'), ringBox: $('#ringBox'), planSection: $('#planSection'),
-  viewToday: $('#viewToday'), viewTasks: $('#viewTasks'),
+  viewToday: $('#viewToday'), viewTasks: $('#viewTasks'), viewChallenges: $('#viewChallenges'),
   mini: $('#mini'), miniArc: $('#miniArc'), miniTime: $('#miniTime'), miniTotal: $('#miniTotal'),
   overlay: $('#overlay'), sheet: $('#sheet'), toast: $('#toast'),
 };
@@ -538,12 +539,13 @@ function renderAll() {
     ? `робота ${hhmm(s.dayStart)}–${hhmm(s.workEnd)} · до ${hhmm(s.dayEnd)}`
     : `вихідний · до ${hhmm(s.dayEnd)}`;
   // Поки немає жодних задач (ні сьогодні, ні в майбутньому, ні без дати) — тільки Скеля і дві дії
-  const noData = !state.tasks.length && !state.backlog.length && !Object.values(state.future).some((l) => l.length);
+  const noData = !state.tasks.length && !state.backlog.length && !state.challenges.length && !Object.values(state.future).some((l) => l.length);
   els.planSection.hidden = !state.tasks.length;
   document.body.classList.toggle('is-empty', noData);
   if (noData) view = 'today';
   els.viewToday.hidden = view !== 'today';
   els.viewTasks.hidden = view !== 'tasks';
+  els.viewChallenges.hidden = view !== 'challenges';
   document.querySelectorAll('.tab[data-tab]').forEach((b) => {
     const on = b.dataset.tab === view;
     b.classList.toggle('on', on);
@@ -552,6 +554,7 @@ function renderAll() {
   renderHero();
   renderGrid();
   if (view === 'tasks') renderTasks();
+  if (view === 'challenges') renderChallenges();
   tick();
 }
 
@@ -624,6 +627,152 @@ function renderTasks() {
 </section>`;
 
   els.viewTasks.innerHTML = h;
+}
+
+/* ================= Челенджі ================= */
+
+const MONTHS_SHORT = ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру'];
+const daysBetween = (a, b) => Math.round((dateOf(b) - dateOf(a)) / 86400000);
+const chEnd = (ch) => addDays(ch.start, ch.days - 1);
+const FLAME_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1.2-3.8 2.5-5 .3 1.6 1 2.6 2 3 0-3 .2-5.5.5-8z"/></svg>';
+
+// Скільки хвилин навчання цього напряму було в день (із закритих задач)
+function chMinutes(ch, key) {
+  if (key === todayKey()) {
+    return state.tasks.filter((t) => t.type === 'learn' && t.challenge === ch.dir && t.status === 'done')
+      .reduce((s, t) => s + elapsedMs(t) / 60000, 0);
+  }
+  return (state.history[key] || []).filter((x) => x.type === 'learn' && x.challenge === ch.dir && x.done)
+    .reduce((s, x) => s + (x.fact || x.minutes), 0);
+}
+
+// Рівень квадратика: 0 — нічого, 1 — трохи, 2 — половина мети, 3 — день зараховано
+function chLevel(ch, key) {
+  if (ch.marks[key]) return 3;
+  const r = chMinutes(ch, key) / ch.goal;
+  return r >= 1 ? 3 : r >= 0.5 ? 2 : r > 0 ? 1 : 0;
+}
+
+function chStats(ch) {
+  const today = todayKey();
+  let done = 0;
+  for (let i = 0; i < ch.days; i++) {
+    const k = addDays(ch.start, i);
+    if (k > today) break;
+    if (chLevel(ch, k) === 3) done++;
+  }
+  // Серія: дні поспіль до сьогодні (якщо сьогодні ще не зроблено — до вчора)
+  let streak = 0;
+  let k = chLevel(ch, today) === 3 ? today : addDays(today, -1);
+  while (k >= ch.start && k <= chEnd(ch) && chLevel(ch, k) === 3) { streak++; k = addDays(k, -1); }
+  return {
+    done, streak,
+    finished: today > chEnd(ch),
+    started: today >= ch.start,
+    todayDone: chLevel(ch, today) === 3,
+    dayNo: Math.min(ch.days, daysBetween(ch.start, today) + 1),
+  };
+}
+
+// Сітка як у GitHub: стовпчик — тиждень, рядок — день тижня (Пн зверху)
+function chGrid(ch) {
+  const today = todayKey(), color = CHALLENGES[ch.dir].color;
+  const off = (weekdayOf(ch.start) + 6) % 7;
+  const cols = Math.ceil((off + ch.days) / 7);
+  const sq = Math.max(12, Math.min(30, Math.floor(330 / cols) - 4));
+  const months = new Array(cols).fill('');
+  let cells = '<i class="sq pad"></i>'.repeat(off);
+  for (let i = 0; i < ch.days; i++) {
+    const k = addDays(ch.start, i), d = dateOf(k), col = Math.floor((off + i) / 7);
+    if (i === 0 || d.getDate() === 1) months[col] = months[col] || MONTHS_SHORT[d.getMonth()];
+    const lvl = k > today ? 'f' : chLevel(ch, k);
+    cells += `<i class="sq l${lvl}${k === today ? ' is-today' : ''}"></i>`;
+  }
+  return `<div class="sq-scroll" style="--sq:${sq}px;--c:${color}">
+    <div class="sq-months" style="grid-template-columns:repeat(${cols},var(--sq))">${months.map((m) => `<span>${m}</span>`).join('')}</div>
+    <div class="sq-grid">${cells}</div></div>`;
+}
+
+function challengeHtml(ch) {
+  const c = CHALLENGES[ch.dir], st = chStats(ch);
+  const sub = !st.started ? `старт ${dateOf(ch.start).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`
+    : st.finished ? `завершено · ${ch.days} днів` : `день ${st.dayNo} з ${ch.days}`;
+  return `<section class="ch" style="--c:${c.color}">
+    <div class="ch-top">
+      <button class="ch-title" data-action="ch-edit" data-id="${ch.id}">
+        <b>${esc(ch.title)}</b><small>${dur(ch.goal)} на день · ${sub}</small></button>
+      ${st.finished ? '' : `<button class="ch-check${st.todayDone ? ' on' : ''}" data-action="ch-check" data-id="${ch.id}" aria-label="Зарахувати сьогодні" aria-pressed="${st.todayDone}">${CHECK_SVG}</button>`}
+    </div>
+    <div class="ch-stats"><span class="streak${st.streak ? ' hot' : ''}">${FLAME_SVG}${st.streak} ${st.streak === 1 ? 'день' : st.streak > 1 && st.streak < 5 ? 'дні' : 'днів'} поспіль</span>
+      <span>${st.done} з ${ch.days} зараховано</span></div>
+    ${chGrid(ch)}
+    ${st.finished ? `<div class="ch-end"><p>Челендж завершено: ${st.done} з ${ch.days} днів. Продовжуємо?</p>
+      <button class="btn-pearl" data-action="ch-extend" data-id="${ch.id}" data-n="30">Продовжити на 30 днів</button>
+      <div class="chips"><button class="btn-quiet lg" data-action="ch-extend" data-id="${ch.id}" data-n="7">+7 днів</button>
+      <button class="btn-quiet lg" data-action="ch-archive" data-id="${ch.id}">Завершити</button></div></div>` : ''}
+  </section>`;
+}
+
+function renderChallenges() {
+  const act = state.challenges.filter((c) => !c.archived);
+  const arch = state.challenges.filter((c) => c.archived);
+  let h = '<header class="cal-head"><h1>Челенджі</h1></header>';
+  h += act.length ? act.map(challengeHtml).join('')
+    : `<div class="ch-empty"><p>Обери напрям і скільки днів — квадратики заповнюватимуться щоразу, коли вчишся.</p>
+       <p>Натисни «+» внизу, щоб почати перший челендж.</p></div>`;
+  if (arch.length) {
+    h += `<section class="cal-section"><div class="cal-day-head"><h2>Завершені · ${arch.length}</h2></div>
+      ${arch.map((ch) => `<button class="cal-row" data-action="ch-restore" data-id="${ch.id}">
+        <span class="cn"><span class="dot" style="background:${CHALLENGES[ch.dir].color}"></span>${esc(ch.title)}</span>
+        <span class="cd">${chStats(ch).done} з ${ch.days} · повернути</span></button>`).join('')}</section>`;
+  }
+  els.viewChallenges.innerHTML = h;
+  // Довгі челенджі прокручуємо до сьогоднішнього тижня
+  els.viewChallenges.querySelectorAll('.sq-scroll').forEach((sc) => {
+    const now = sc.querySelector('.sq.is-today');
+    if (now && sc.scrollWidth > sc.clientWidth) sc.scrollLeft = now.offsetLeft - sc.clientWidth / 2;
+  });
+}
+
+function openChallengeForm(id) {
+  const ch = state.challenges.find((c) => c.id === id) || null;
+  const pick = { dir: ch ? ch.dir : 'ux', days: ch ? ch.days : 30, goal: ch ? ch.goal : 60, start: 'today' };
+  const dayOpts = [7, 14, 21, 30, 60, 90];
+  openSheet(`<form id="chForm" class="form" novalidate>
+    <h3>${ch ? 'Челендж' : 'Новий челендж'}</h3>
+    <div class="field"${ch ? ' hidden' : ''}><span>Напрям</span>${challengeChoice(pick.dir).replace('data-group="challenge"', 'data-group="dir"')}</div>
+    <label class="field"><span>Назва</span><input class="input" name="title" autocomplete="off" placeholder="${CHALLENGES[pick.dir].name} щодня" value="${esc(ch ? ch.title : '')}"></label>
+    <div class="field"><span>Скільки днів</span>${choice('days', dayOpts.map((d) => [d, `${d}`]), dayOpts.includes(pick.days) ? pick.days : '')}
+      <label class="dur-num" style="margin-top:8px"><input class="input" type="number" inputmode="numeric" name="daysN" min="1" max="365" value="${pick.days}" aria-label="Кількість днів"><span>днів</span></label></div>
+    <div class="field"><span>Скільки на день</span>${choice('goal', [15, 30, 45, 60, 90, 120].map((m) => [m, dur(m)]), pick.goal)}</div>
+    <div class="field"${ch ? ' hidden' : ''}><span>Початок</span>${choice('start', [['today', 'Сьогодні'], ['tomorrow', 'Завтра']], pick.start)}</div>
+    <p class="err" id="chErr"></p>
+    <button class="btn-pearl" type="submit">${ch ? 'Зберегти' : 'Почати челендж'}</button>
+    ${ch ? `<button type="button" class="btn-quiet lg" data-action="ch-delete" data-id="${ch.id}">Видалити челендж</button>` : ''}
+  </form>`);
+  const f = $('#chForm');
+  bindChoices(f, pick, () => {
+    f.elements.daysN.value = pick.days;
+    f.elements.title.placeholder = `${CHALLENGES[pick.dir].name} щодня`;
+  });
+  f.elements.daysN.addEventListener('input', () => {
+    pick.days = Math.round(Number(f.elements.daysN.value) || 0);
+    f.querySelectorAll('[data-group="days"] .btn-quiet').forEach((b) => b.classList.toggle('on', Number(b.dataset.val) === pick.days));
+    $('#chErr').textContent = '';
+  });
+  f.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!(pick.days >= 1 && pick.days <= 365)) { $('#chErr').textContent = 'Вкажи від 1 до 365 днів.'; return; }
+    const title = f.elements.title.value.trim() || `${CHALLENGES[pick.dir].name} щодня`;
+    if (ch) Object.assign(ch, { title, days: pick.days, goal: pick.goal });
+    else {
+      state.challenges.unshift({
+        id: uid(), dir: pick.dir, title, days: pick.days, goal: pick.goal, marks: {},
+        start: pick.start === 'tomorrow' ? addDays(todayKey(), 1) : todayKey(),
+      });
+    }
+    save(); closeSheet(); renderAll();
+  });
 }
 
 function dayListHtml(key) {
@@ -1472,7 +1621,43 @@ const actions = {
   done,
   extend: (el) => extend(Number(el.dataset.min)),
   custom: openCustom,
-  menu: openMenu,
+  // На екрані «Челенджі» «+» одразу створює челендж
+  menu: () => (view === 'challenges' ? openChallengeForm() : openMenu()),
+  'ch-edit': (el) => openChallengeForm(el.dataset.id),
+  'ch-check': (el) => {
+    const ch = state.challenges.find((c) => c.id === el.dataset.id);
+    if (!ch) return;
+    const k = todayKey();
+    if (!ch.marks[k] && chMinutes(ch, k) >= ch.goal) { toast('Сьогодні вже зараховано з задач'); return; }
+    if (ch.marks[k]) delete ch.marks[k]; else ch.marks[k] = true;
+    save(); renderChallenges();
+    if (ch.marks[k]) toast('Зараховано');
+  },
+  'ch-extend': (el) => {
+    const ch = state.challenges.find((c) => c.id === el.dataset.id);
+    if (!ch) return;
+    const n = Number(el.dataset.n);
+    // Продовжуємо від сьогодні: пропущені дні між кінцем і сьогодні теж стають частиною челенджу
+    const need = daysBetween(ch.start, todayKey()) + n;
+    ch.days = Math.max(ch.days + n, need);
+    save(); renderChallenges();
+    toast(`Продовжено на ${n} днів`);
+  },
+  'ch-archive': (el) => {
+    const ch = state.challenges.find((c) => c.id === el.dataset.id);
+    if (ch) ch.archived = true;
+    save(); renderChallenges();
+  },
+  'ch-delete': (el) => {
+    if (!confirm('Видалити челендж разом з усім прогресом?')) return;
+    state.challenges = state.challenges.filter((c) => c.id !== el.dataset.id);
+    save(); closeSheet(); renderAll();
+  },
+  'ch-restore': (el) => {
+    const ch = state.challenges.find((c) => c.id === el.dataset.id);
+    if (ch) ch.archived = false;
+    save(); renderChallenges();
+  },
   // На екрані «Задачі» нова задача одразу йде в обраний день
   add: () => openForm({ dayKey: view === 'tasks' && cal.sel >= todayKey() ? cal.sel : undefined }),
   tab: (el) => { view = el.dataset.tab; closeSheet(); window.scrollTo(0, 0); renderAll(); },

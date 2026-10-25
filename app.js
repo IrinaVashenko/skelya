@@ -136,7 +136,30 @@ function load() {
   s.settings = { ...DEFAULTS, ...rest };
   if (!s.flags) s.flags = freshFlags();
   if (s.date !== todayKey()) s = rollover(s);
+  if (!s.demoCleaned) { cleanOldDemo(s); s.demoCleaned = true; }
   return s;
+}
+
+// Задачі демо-дня зі старих версій не мали позначки demo і щодня переносились далі.
+// Прибираємо їх один раз: лише ті, де назва і результат точно як у демо
+const DEMO_TASKS = [
+  ['Пошта і задачі від ліда', 'Усі задачі з голосових записані в план'],
+  ['Макет головної для клієнта', "Перший екран + меню у Figma, готові на рев'ю"],
+  ['Правки банера', '3 розміри банера з правками віддані'],
+  ['Сайт клієнта: структура', 'Карта сайту і список сторінок'],
+  ['UX: кейс-стаді', 'Розібраний 1 кейс і 3 записані інсайти'],
+];
+function cleanOldDemo(s) {
+  const isDemo = (t) => t.demo || DEMO_TASKS.some(([title, result]) => t.title === title && t.result === result);
+  s.tasks = s.tasks.filter((t) => !isDemo(t));
+  for (const k of Object.keys(s.future)) s.future[k] = s.future[k].filter((t) => !isDemo(t));
+  // В історії результату немає: прибираємо демо-назви лише з днів, де їх щонайменше три (тобто це був демо-день)
+  const titles = new Set(DEMO_TASKS.map(([t]) => t));
+  for (const k of Object.keys(s.history)) {
+    const day = s.history[k];
+    if (day.filter((x) => titles.has(x.title)).length >= 3) s.history[k] = day.filter((x) => !titles.has(x.title));
+    if (!s.history[k].length) delete s.history[k];
+  }
 }
 
 function save() {
@@ -380,8 +403,7 @@ function renderHero() {
     els.heroActions.innerHTML = `<div class="calm-text"><h2>Почнімо спокійно</h2>
         <p>Додай першу задачу або встав список, який склала разом зі Скелею в Claude.</p></div>
       <button class="btn-pearl" data-action="add">Додати першу задачу</button>
-      <button class="btn-quiet lg" data-action="import">Вставити список з Claude</button>
-      <button class="link-quiet" data-action="demo">або подивись демо-день</button>`;
+      <button class="btn-quiet lg" data-action="import">Вставити список з Claude</button>`;
   }
 }
 

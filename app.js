@@ -64,7 +64,7 @@ const active = () => state.tasks.find((t) => t.status === 'active');
 const nextTask = () => { const b = schedule().find((x) => isFlex(x.t) && x.t.status === 'todo'); return b ? b.t : null; };
 
 // dayStart — початок дня і роботи, workEnd — кінець роботи, dayEnd — межа дня
-const DEFAULTS = { dayStart: 600, workEnd: 1020, dayEnd: 1260, workDays: [1, 2, 3, 4, 5] };
+const DEFAULTS = { dayStart: 600, workEnd: 1020, dayEnd: 1260, workDays: [1, 2, 3, 4, 5], sound: true };
 const WEEKDAYS = [[1, 'Пн'], [2, 'Вт'], [3, 'Ср'], [4, 'Чт'], [5, 'Пт'], [6, 'Сб'], [0, 'Нд']];
 const isWorkday = () => state.settings.workDays.includes(new Date().getDay());
 
@@ -992,28 +992,61 @@ new IntersectionObserver((entries) => {
 /* ================= Звук ================= */
 
 let audio = null;
+// iOS вмикає звук сторінки лише після дотику: створюємо контекст і граємо тишу в момент першого тапу
 function unlockAudio() {
   try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (!audio) {
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      const b = audio.createBuffer(1, 1, 22050), src = audio.createBufferSource();
+      src.buffer = b; src.connect(audio.destination); src.start(0);
+    }
     if (audio.state === 'suspended') audio.resume();
   } catch (e) { /* звук недоступний */ }
 }
-function beep(times = 1) {
-  // Вібрацію браузер дозволяє лише після першого дотику до сторінки
-  if (navigator.vibrate && audio) navigator.vibrate(times > 1 ? [200, 120, 200] : 200);
-  if (!audio) return;
-  for (let i = 0; i < times; i++) {
+
+// Одна нота дзвіночка: основний тон + тихий обертон, м'яка атака і довгий спад
+function bell(freq, t, len = 0.9, vol = 0.5) {
+  const out = audio.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  out.connect(audio.destination);
+  [[1, 1], [2.01, 0.25], [3.02, 0.08]].forEach(([mult, amp]) => {
     const o = audio.createOscillator(), g = audio.createGain();
-    const t = audio.currentTime + i * 0.35;
     o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-    o.connect(g).connect(audio.destination);
+    o.frequency.value = freq * mult;
+    g.gain.value = amp;
+    o.connect(g).connect(out);
     o.start(t);
-    o.stop(t + 0.32);
-  }
+    o.stop(t + len + 0.05);
+  });
+}
+
+// soft — «лишилось 15 хв», end — «час вийшов» (мелодія двічі)
+function beep(times = 1) {
+  if (state.settings.sound === false) return;
+  const kind = times > 1 ? 'end' : 'soft';
+  // Вібрацію браузер дозволяє лише після першого дотику до сторінки
+  if (navigator.vibrate && audio) navigator.vibrate(kind === 'end' ? [250, 120, 250, 120, 250] : 200);
+  if (!audio) return;
+  try {
+    // iOS 17+: грати навіть у беззвучному режимі, як будильник
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime + 0.05;
+    if (kind === 'soft') {
+      bell(784, t, 0.8, 0.4);          // соль
+      bell(1047, t + 0.22, 1.1, 0.4);  // до
+    } else {
+      for (const rep of [0, 1.6]) {
+        bell(659, t + rep, 0.7, 0.55);        // мі
+        bell(784, t + rep + 0.2, 0.7, 0.55);  // соль
+        bell(1047, t + rep + 0.4, 1.2, 0.6);  // до
+      }
+    }
+    // Після сигналу повертаємо звичайну поведінку звуку
+    setTimeout(() => { if (navigator.audioSession) navigator.audioSession.type = 'auto'; }, 4000);
+  } catch (e) { /* звук недоступний */ }
 }
 document.addEventListener('pointerdown', unlockAudio);
 
@@ -1354,7 +1387,7 @@ function openTask(id) {
 
 function openSettings() {
   const s = state.settings;
-  const pick = { days: new Set(s.workDays) };
+  const pick = { days: new Set(s.workDays), sound: s.sound === false ? 'off' : 'on' };
   openSheet(`<form id="setForm" class="form">
     <h3>Мій день</h3>
     <div class="row2">
@@ -1364,6 +1397,9 @@ function openSettings() {
     <label class="field"><span>Межа дня — після неї Скеля пропонує переносити</span><input class="input" type="time" name="e" value="${hhmm(s.dayEnd)}"></label>
     <div class="field"><span>Робочі дні</span><div class="wrap" data-multi="days">
       ${WEEKDAYS.map(([d, n]) => `<button type="button" class="btn-quiet${pick.days.has(d) ? ' on' : ''}" data-val="${d}">${n}</button>`).join('')}</div></div>
+    <div class="field"><span>Звук сигналу (коли лишилось 15 хв і коли час вийшов)</span>
+      <div class="wrap">${choice('sound', [['on', 'Увімкнено'], ['off', 'Вимкнено']], pick.sound).replace(/^<div class="wrap" /, '<div class="wrap" style="display:contents" ')}
+      <button type="button" class="btn-quiet" data-action="sound-test">▶ Прослухати</button></div></div>
     <p class="err" id="setErr"></p>
     <button class="btn-pearl" type="submit">Зберегти</button>
     <button type="button" class="btn-quiet lg" data-action="routine">Мій розклад тижня</button></form>`);
@@ -1376,7 +1412,7 @@ function openSettings() {
     const en = parseHHMM(f.elements.e.value || '21:00');
     if (we <= st) { $('#setErr').textContent = 'Кінець роботи має бути пізніше за початок.'; return; }
     if (en < we) { $('#setErr').textContent = 'Межа дня не може бути раніше за кінець роботи.'; return; }
-    Object.assign(state.settings, { dayStart: st, workEnd: we, dayEnd: en, workDays: [...pick.days] });
+    Object.assign(state.settings, { dayStart: st, workEnd: we, dayEnd: en, workDays: [...pick.days], sound: pick.sound !== 'off' });
     state.tasks.forEach((t) => { t.lateAck = false; });
     save(); closeSheet(); renderAll(); checkLate();
   });
@@ -1960,6 +1996,13 @@ const actions = {
     toast('Робочі задачі перенесено на завтра');
   },
   demo: seedDemo,
+  'sound-test': () => {
+    unlockAudio();
+    const was = state.settings.sound;
+    state.settings.sound = true;
+    beep(2);
+    state.settings.sound = was;
+  },
   'demo-exit': () => {
     if (active() && active().demo) { closePause(active()); }
     state.tasks = state.tasks.filter((t) => !t.demo);

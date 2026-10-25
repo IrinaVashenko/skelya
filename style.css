@@ -518,3 +518,19 @@ input[type="time"].input::-webkit-date-and-time-value, input[type="date"].input:
   mask-image: linear-gradient(to bottom, transparent 0%, #000 50%);
 }
 body.is-empty .dock-fade { display: none; }
+
+/* ---------- Перемикач і поле часу ---------- */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; cursor: pointer; }
+.switch-row > span { display: flex; flex-direction: column; gap: 2px; font-size: 15px; color: var(--text); }
+.switch-row small { font-size: 12px; color: var(--muted); }
+.switch-row input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.switch-row .sw { flex: none; position: relative; width: 51px; height: 31px; border-radius: 999px; background: #3A3A3E; transition: background .2s; }
+.switch-row .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); transition: transform .2s; }
+.switch-row input:checked + .sw { background: var(--green); }
+.switch-row input:checked + .sw::after { transform: translateX(20px); }
+.switch-row input:focus-visible + .sw { outline: 2px solid var(--text); outline-offset: 2px; }
+.time-row { display: flex; gap: 8px; align-items: stretch; }
+.time-row .input { flex: 1; }
+.time-row .btn-quiet.icon { flex: 0 0 46px; height: auto; }
+.field .opt { font-style: normal; color: var(--faint); }
+.input:disabled { opacity: .4; }

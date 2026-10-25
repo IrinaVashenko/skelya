@@ -227,7 +227,8 @@ function schedule() {
   // Задачі з часом старту стоять на своєму місці (якщо цей час ще не минув),
   // решта йде одна за одною і обтікає їх так само, як фіксовані події
   const todo = state.tasks.filter((x) => isFlex(x) && x.status === 'todo');
-  const anchored = todo.filter((t) => t.startAt != null && t.startAt >= cursor)
+  // Фіксований час (pinned) — завжди на своїй годині; орієнтовний — поки цей час ще не минув
+  const anchored = todo.filter((t) => t.startAt != null && (t.pinned || t.startAt >= cursor))
     .map((t) => ({ t, start: t.startAt, end: t.startAt + t.minutes }));
   out.push(...anchored);
   const obstacles = [...fixed, ...anchored];
@@ -533,14 +534,15 @@ function renderGrid() {
     const w = `calc((100% - ${GUTTER}px) / ${b.cols} - 3px)`;
     const l = `calc(${GUTTER}px + (100% - ${GUTTER}px) / ${b.cols} * ${b.col})`;
     const isDone = t.status === 'done';
-    const pinned = t.status === 'todo' && t.startAt != null && b.start === t.startAt;
+    const soft = t.status === 'todo' && t.startAt != null && !t.pinned && b.start === t.startAt;
+    const locked = t.type === 'fixed' || t.pinned;
     const meta = isDone
       ? `зроблено · ${dur(elapsedMs(t) / 60000)}`
       : `${hhmm(b.start)}–${hhmm(b.end)}${t.extra ? ` · +${t.extra} хв` : ''}`;
     // Зроблена коротка задача: галочка, назва і час в одному рядку
     const label = isDone
       ? `${CHECK_SVG}${esc(t.title)}${ht <= 36 ? ` <em>· ${dur(elapsedMs(t) / 60000)}</em>` : ''}`
-      : `${pinned ? PIN_SVG : ''}${esc(t.title)}${t.type === 'fixed' ? LOCK_SVG : ''}`;
+      : `${soft ? PIN_SVG : ''}${esc(t.title)}${locked ? LOCK_SVG : ''}`;
     h += `<button class="${cls.join(' ')}" data-action="open" data-id="${t.id}"
       style="top:${top(b)}px;height:${ht}px;left:${l};width:${w};${color ? `--c:${color}` : ''}">
       <span class="bt">${label}</span>${ht > 36 ? `<small>${meta}</small>` : ''}</button>`;
@@ -962,10 +964,10 @@ function dayListHtml(key) {
     summary = l.count ? `${l.count} ${l.count === 1 ? 'задача' : l.count < 5 ? 'задачі' : 'задач'} · ${dur(flexMin)}` : '';
     rows = blocks.map((b) => {
       const t = b.t, c = taskColor(t);
-      const icon = t.status === 'done' ? CHECK_SVG : t.status === 'active' ? '<span class="live"></span>' : t.startAt != null && isFlex(t) ? PIN_SVG : '';
+      const icon = t.status === 'done' ? CHECK_SVG : t.status === 'active' ? '<span class="live"></span>' : t.startAt != null && isFlex(t) && !t.pinned ? PIN_SVG : '';
       return `<button class="cal-row${t.virtual || t.type === 'break' ? ' quiet' : ''}${t.status === 'done' ? ' ok' : ''}${isFlex(t) && b.end > state.settings.dayEnd ? ' late' : ''}" data-action="open" data-id="${t.id}">
         <span class="ct">${hhmm(b.start)}</span>
-        <span class="cn">${icon}${c ? `<span class="dot" style="background:${c}"></span>` : ''}${esc(t.title)}${t.type === 'fixed' ? LOCK_SVG : ''}</span>
+        <span class="cn">${icon}${c ? `<span class="dot" style="background:${c}"></span>` : ''}${esc(t.title)}${t.type === 'fixed' || t.pinned ? LOCK_SVG : ''}</span>
         <span class="cd">${dur(t.minutes)}</span></button>`;
     }).join('') || '<p class="empty">На цей день нічого не заплановано.</p>';
     if (l.over) summary += `${summary ? ' · ' : ''}<span class="warn">не вміщається</span>`;
@@ -1270,24 +1272,30 @@ function bindDuration(form, pick, key, onChange = () => {}) {
   paint();
 }
 
+// Перемикач у стилі iOS
+const switchHtml = (name, label, sub, on) => `<label class="switch-row">
+  <span>${label}${sub ? `<small>${sub}</small>` : ''}</span>
+  <input type="checkbox" name="${name}"${on ? ' checked' : ''}><i class="sw" aria-hidden="true"></i></label>`;
+
 function openForm({ task = null, gap = null, preset = null, dayKey = null } = {}) {
   const editing = !!task;
-  const today = todayKey(), tomorrow = addDays(today, 1);
+  const today = todayKey();
   // З якого дня задача: для редагування — де вона лежить, для нової — обраний день або сьогодні
   const srcKey = editing ? (findTask(task.id) || { key: today }).key : (dayKey || today);
+  // Стара «Фіксована» подія тепер — робота (або навчання) з фіксованим часом
+  const wasFixed = editing && task.type === 'fixed';
   const pick = {
-    type: task ? task.type : (preset && preset.type) || 'work',
-    when: (task && task.startAt != null) || gap ? 'at' : 'auto',
+    type: wasFixed ? (task.challenge ? 'learn' : 'work') : task ? task.type : (preset && preset.type) || 'work',
     challenge: (task && task.challenge) || 'ux',
     // У вільне вікно: стільки, скільки вміщається, але не більше години (кратно 5 хв)
     minutes: task ? task.minutes : gap ? Math.max(5, Math.min(60, Math.floor(gap.len / 5) * 5)) : (preset && preset.minutes) || 60,
-    day: srcKey === 'backlog' ? 'none' : srcKey === today ? 'today' : srcKey === tomorrow ? 'tomorrow' : 'date',
   };
   const canMove = !editing || task.status === 'todo';
   const lockType = editing && task.status !== 'todo';
-  const soon = Math.ceil(nowMin() / 15) * 15;
-  const at = hhmm(task && task.fixedStart != null ? task.fixedStart : gap ? gap.start : soon);
-  const startAt = hhmm(task && task.startAt != null ? task.startAt : gap ? gap.start : soon);
+  const timeVal = task && task.fixedStart != null ? hhmm(task.fixedStart)
+    : task && task.startAt != null ? hhmm(task.startAt) : gap ? hhmm(gap.start) : '';
+  const pinnedOn = wasFixed || !!(task && task.pinned);
+  const dateVal = srcKey === 'backlog' ? today : srcKey;
 
   let facts = '';
   if (editing && task.status === 'done') facts = `<p>Зроблено за ${dur(elapsedMs(task) / 60000)} · план ${dur(plan(task))}</p>`;
@@ -1299,19 +1307,20 @@ function openForm({ task = null, gap = null, preset = null, dayKey = null } = {}
     <h3>${editing ? 'Задача' : 'Нова задача'}</h3>${facts}
     <label class="field"><span>Що робиш</span><input class="input" name="title" autocomplete="off" placeholder="Макет головної для клієнта" value="${esc(task ? task.title : '')}"></label>
     <label class="field" data-show="flex"><span>Що буде результатом</span><input class="input" name="result" autocomplete="off" placeholder="Перший екран + меню, готові на рев'ю" value="${esc(task ? task.result : '')}"></label>
-    <div class="field"${canMove ? '' : ' hidden'}><span>День</span>
-      ${choice('day', [['today', 'Сьогодні'], ['tomorrow', 'Завтра'], ['date', 'Інший день'], ['none', 'Без дати']], pick.day)}</div>
-    <label class="field" data-show="day-date" hidden><span>Дата</span><input class="input" type="date" name="dayDate" min="${today}" value="${srcKey !== 'backlog' && srcKey > tomorrow ? srcKey : addDays(today, 2)}"></label>
     <div class="field"${lockType ? ' hidden' : ''}><span>Тип</span>
-      ${choice('type', [['work', 'Робота'], ['learn', 'Навчання'], ['fixed', 'Фіксована'], ['break', 'Перерва']], pick.type)}</div>
+      ${choice('type', [['work', 'Робота'], ['learn', 'Навчання'], ['break', 'Перерва']], pick.type)}</div>
     <div class="field" data-show="learn" hidden><span>Челендж</span>${challengeChoice(pick.challenge)}</div>
-    <label class="field" data-show="time" hidden><span>О котрій</span><input class="input" type="time" name="at" value="${at}"></label>
+    <div class="field"${canMove ? '' : ' hidden'}><span>День</span>
+      <input class="input" type="date" name="dayDate" min="${today}" value="${dateVal}">
+      <span data-show="nodate">${switchHtml('noDate', 'Без дати', 'задача «колись», день обереш пізніше', srcKey === 'backlog')}</span></div>
+    <div class="field" data-show="time-box"${canMove ? '' : ' hidden'}><span>Час <em class="opt" data-show="opt">— необов'язково</em></span>
+      <div class="time-row"><input class="input" type="time" name="startAt" value="${timeVal}">
+        <button type="button" class="btn-quiet icon" data-role="clear-time" aria-label="Прибрати час"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button></div>
+      <p class="hint muted" id="timeHint"></p>
+      <span data-show="pin">${switchHtml('pinned', 'Фіксований час', 'не рухається в графіку, як зустріч чи заняття', pinnedOn)}</span></div>
     <div class="field"><span>Скільки часу даєш</span>
       ${durationHtml(pick.minutes)}</div>
     <p class="hint" id="splitHint" hidden>Більше 2 год? Розбий на кроки.</p>
-    <div class="field" data-show="when"><span>Коли почати</span>
-      ${choice('when', [['auto', 'Після попередньої'], ['at', 'О певній годині']], pick.when)}</div>
-    <label class="field" data-show="when-at" hidden><span>Початок</span><input class="input" type="time" name="startAt" value="${startAt}"></label>
     <p class="err" id="formErr"></p>
     <button class="btn-pearl" type="submit">${editing ? 'Зберегти' : 'Додати в план'}</button>
     ${editing ? `<div class="chips">
@@ -1320,44 +1329,57 @@ function openForm({ task = null, gap = null, preset = null, dayKey = null } = {}
   </form>`);
 
   const form = $('#taskForm');
+  const { dayDate, noDate, startAt, pinned } = form.elements;
   const flexible = () => pick.type === 'work' || pick.type === 'learn';
   const sync = () => {
+    const isBreak = pick.type === 'break', hasTime = !!startAt.value, backlog = noDate.checked && !isBreak;
     form.querySelectorAll('[data-show="flex"]').forEach((x) => { x.hidden = !flexible(); });
     form.querySelector('[data-show="learn"]').hidden = pick.type !== 'learn';
-    form.querySelector('[data-show="time"]').hidden = flexible();
-    // Без дати час старту не має сенсу
-    form.querySelector('[data-show="when"]').hidden = !flexible() || pick.day === 'none';
-    form.querySelector('[data-show="when-at"]').hidden = !(flexible() && pick.when === 'at' && pick.day !== 'none');
-    form.querySelector('[data-show="day-date"]').hidden = pick.day !== 'date';
+    // Перерва завжди прив'язана до дня і часу
+    form.querySelector('[data-show="nodate"]').hidden = isBreak;
+    dayDate.disabled = backlog;
+    form.querySelector('[data-show="time-box"]').hidden = !canMove || backlog;
+    form.querySelector('[data-show="opt"]').hidden = isBreak;
+    form.querySelector('[data-role="clear-time"]').hidden = !hasTime || isBreak;
+    form.querySelector('[data-show="pin"]').hidden = isBreak || !hasTime;
+    $('#timeHint').textContent = isBreak ? '' : !hasTime ? 'Без часу задача стане після попередньої.'
+      : pinned.checked ? 'Стоїть рівно на цій годині.' : 'Орієнтовний час: якщо попередня задача затягнеться, ця зсунеться.';
     $('#splitHint').hidden = !(pick.minutes > 120 && flexible());
   };
   bindChoices(form, pick, sync);
-  form.addEventListener('input', () => { $('#formErr').textContent = ''; });
+  form.addEventListener('input', () => { $('#formErr').textContent = ''; sync(); });
+  form.addEventListener('change', sync);
+  form.querySelector('[data-role="clear-time"]').addEventListener('click', () => { startAt.value = ''; pinned.checked = false; sync(); });
 
   bindDuration(form, pick, 'minutes', sync);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const title = form.elements.title.value.trim(), result = form.elements.result.value.trim();
+    const isBreak = pick.type === 'break';
+    const backlog = noDate.checked && !isBreak;
+    const time = startAt.value ? parseHHMM(startAt.value) : null;
+    const isPinned = !isBreak && !backlog && time != null && pinned.checked;
     if (!title) { $('#formErr').textContent = 'Напиши, що робиш.'; return; }
-    if (flexible() && !result) { $('#formErr').textContent = 'Напиши, що буде результатом — так ти знатимеш, коли задача готова.'; return; }
+    // Для зустрічі з фіксованим часом результат необов'язковий
+    if (flexible() && !result && !isPinned) { $('#formErr').textContent = 'Напиши, що буде результатом — так ти знатимеш, коли задача готова.'; return; }
     if (pick.minutes < 5 || pick.minutes > 12 * 60) { $('#formErr').textContent = 'Вкажи тривалість від 5 хв до 12 год.'; return; }
-    const target = pick.day === 'today' ? today : pick.day === 'tomorrow' ? tomorrow : pick.day === 'none' ? 'backlog' : form.elements.dayDate.value;
-    if (!target) { $('#formErr').textContent = 'Обери дату.'; return; }
-    if (target !== 'backlog' && target < today) { $('#formErr').textContent = 'Ця дата вже минула.'; return; }
-    if (target === 'backlog' && !flexible()) { $('#formErr').textContent = 'Фіксовану подію чи перерву треба прив\'язати до дня.'; return; }
+    const target = backlog ? 'backlog' : dayDate.value;
+    if (!target) { $('#formErr').textContent = 'Обери день.'; return; }
+    if (target !== 'backlog' && target < today) { $('#formErr').textContent = 'Цей день уже минув.'; return; }
+    if (isBreak && time == null) { $('#formErr').textContent = 'Для перерви вкажи час.'; return; }
 
     const t = task || { id: uid(), status: 'todo', extra: 0 };
     Object.assign(t, { title, type: pick.type, minutes: pick.minutes, lateAck: false });
-    if (flexible()) {
+    if (isBreak) {
+      t.fixedStart = time;
+      delete t.startAt; delete t.pinned; delete t.result; delete t.challenge;
+    } else {
       t.result = result;
       delete t.fixedStart;
-      if (pick.when === 'at') t.startAt = parseHHMM(form.elements.startAt.value || hhmm(soon)); else delete t.startAt;
-    } else {
-      t.fixedStart = parseHHMM(form.elements.at.value || '12:00');
-      delete t.startAt;
+      if (time != null && !backlog) t.startAt = time; else delete t.startAt;
+      if (isPinned) t.pinned = true; else delete t.pinned;
+      if (pick.type === 'learn') t.challenge = pick.challenge; else delete t.challenge;
     }
-    if (pick.type === 'learn' || (pick.type === 'fixed' && task && task.challenge)) t.challenge = pick.challenge; else if (pick.type !== 'fixed') delete t.challenge;
-    if (target === 'backlog') delete t.startAt;
     if (t.status === 'active') rearm(t);
 
     if (!task) listFor(target).push(t);
